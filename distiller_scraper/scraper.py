@@ -111,50 +111,34 @@ class DistillerScraperV2:
         self.seen_urls: Set[str] = storage.get_existing_urls() if storage else set()
 
     def start_driver(self) -> bool:
-        """啟動 Chrome WebDriver。
+        """啟動 Chrome WebDriver（使用 undetected-chromedriver 繞過 Cloudflare 偵測）。
 
-        各 Chrome 參數的設計理由：
-        - --headless=new：新版無頭模式（Chrome 112+），比舊版 --headless 更穩定
-        - --no-sandbox：在 Docker/CI 環境中必須關閉（沙盒需要特殊 kernel 設定）
-        - --disable-dev-shm-usage：避免在 /dev/shm 空間不足時崩潰（Docker 預設 64MB）
-        - --disable-gpu：無頭環境通常無 GPU，關閉可避免相關錯誤
-        - Performance Logging：捕獲所有網路請求，供 discover_api() 分析 XHR 端點
+        改用 undetected_chromedriver (uc) 的原因：
+        - Cloudflare 封鎖標準 Selenium headless Chrome 的 navigator.webdriver 指紋
+        - uc 自動 patch chromedriver binary，移除 webdriver 特徵碼
+        - uc 不需要手動設定 excludeSwitches / useAutomationExtension（已內建）
 
-        Selenium Manager（Selenium 4.6+）：
-        自動下載與 Chrome 版本相容的 chromedriver，無需手動管理 chromedriver 版本
+        注意：Docker/Cloud Run 環境仍使用原始 Selenium（Dockerfile 不含 uc）
         """
         try:
-            # 延遲導入 selenium 相關模組：避免在測試環境中（未安裝 selenium）報錯
-            from selenium import webdriver
-            from selenium.webdriver.chrome.options import Options as ChromeOptions
+            import undetected_chromedriver as uc
 
-            logger.info("正在啟動 Chrome WebDriver...")
-            options = ChromeOptions()
+            logger.info("正在啟動 Chrome WebDriver (undetected-chromedriver)...")
+            options = uc.ChromeOptions()
 
-            if self.headless:
-                options.add_argument(
-                    "--headless=new"
-                )  # 新版無頭模式，更接近真實瀏覽器行為
-
-            options.add_argument("--no-sandbox")  # Docker 環境必需
-            options.add_argument("--disable-dev-shm-usage")  # 避免共享記憶體不足崩潰
-            options.add_argument("--disable-gpu")  # 無頭環境無 GPU
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-gpu")
             options.add_argument(f"--window-size={ScraperConfig.WINDOW_SIZE}")
-            options.add_argument(f"user-agent={ScraperConfig.USER_AGENT}")
-            # 反偵測：移除 navigator.webdriver 標記，避免被反爬蟲機制封鎖
-            options.add_argument("--disable-blink-features=AutomationControlled")
-            options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            options.add_experimental_option("useAutomationExtension", False)
-
-            # 啟用 Performance Logging：捕獲所有 Network 事件，用於 XHR API 探測
+            # Performance Logging for XHR API discovery
             options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
-            # page_load_strategy='none'：不等待 document.readyState='complete'
-            # 原因：Distiller.com 的 JS 會持續發送背景請求，導致頁面永遠不觸發 load 事件
-            # 改以固定延遲 (INITIAL_PAGE_DELAY) 等待 React 渲染完成
             options.page_load_strategy = "none"
 
-            # Selenium Manager 自動解析相容的 Chrome + chromedriver（Selenium 4.6+）
-            self.driver = webdriver.Chrome(options=options)
+            self.driver = uc.Chrome(
+                options=options,
+                headless=self.headless,
+                use_subprocess=True,
+            )
             self.driver.set_page_load_timeout(ScraperConfig.PAGE_LOAD_TIMEOUT)
 
             logger.info("✓ Chrome WebDriver 已啟動")
@@ -293,6 +277,15 @@ class DistillerScraperV2:
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
             self.driver.execute_script("return document.body.scrollHeight")
+            # Cloudflare IP 封鎖偵測：封鎖頁面 body 能載入，但 title 為 "Attention Required"
+            # 這種情況下選擇器會找不到任何資料，需明確報錯而非靜默回傳 0 筆
+            title = self.driver.title
+            if "Cloudflare" in title or "Attention Required" in title:
+                logger.error(
+                    f"健康檢查失敗（Cloudflare IP 封鎖）: 此 IP 已被 distiller.com 封鎖。"
+                    f"請更換 IP（VPN/代理）或等待封鎖解除後再試。"
+                )
+                return False
             return True
         except TimeoutException as e:
             logger.error(f"健康檢查失敗（逾時）: {e}")
