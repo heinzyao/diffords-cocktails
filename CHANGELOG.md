@@ -2,6 +2,40 @@
 
 本檔案記錄專案的所有重要變更。
 
+## [2.18.0] - 2026-05-24
+
+### 修復
+- **Difford's 爬蟲 HTML Fallback**（`distiller_scraper/diffords_selectors.py`）：
+  - 新增 `_extract_html_only()` 方法：當頁面缺少 JSON-LD 結構化資料時，改從 HTML 結構（`<h1>`、`legacy-ingredients-table`、`h3` 標籤）提取雞尾酒資料
+  - 修改 `extract_all()` 入口：JSON-LD 缺失時呼叫 HTML fallback，而非直接返回 `None`
+  - 修復 271 筆雞尾酒因缺少 JSON-LD 而無法被爬取/查詢的問題
+
+### 變更
+- **爬蟲日誌改善**（`distiller_scraper/diffords_scraper.py`）：
+  - 失敗日誌從「JSON-LD 解析失敗，可能不是雞尾酒詳情頁」改為「提取失敗（無 JSON-LD 且 HTML 無有效名稱）」
+  - 成功日誌新增資料來源標示（JSON-LD / HTML），方便追蹤 fallback 提取的資料
+- **LINE 通知改善**（`distiller_scraper/notify.py`）：
+  - `notify_success()` 支援 Difford's 爬蟲統計鍵（`爬取新增`、`跳過（已是最新）`、`失敗`）
+  - 新增「跳過記錄」行，顯示增量更新跳過的筆數
+  - 程式碼格式化改善（trailing whitespace、參數換行）
+- **執行腳本更新**（`scripts/run_*.sh`）：
+  - 移除 launchd 相關注釋，統一標示為「手動執行 / Cloud Run」
+
+### 移除
+- **launchd 排程範本**：刪除 `com.distiller.scraper.plist.example`、`com.distiller.diffords.plist.example`、`com.distiller.bot.plist.example`（已全面遷移至 Cloud Run）
+
+### 文件
+- 更新 `README.md`：移除 launchd 相關描述與檔案列表，排程說明統一為 Cloud Run
+- 更新 `AGENTS.md`：移除 launchd plist 項目，腳本說明改為「手動 / Cloud Run」
+
+### 測試
+- 新增 `TestDiffordsExtractorHtmlFallback` 測試類別（8 個測試案例）：
+  - HTML-only 完整頁面提取、食材提取、H3 欄位提取、ABV 提取
+  - JSON-LD 專有欄位為 None、最小 HTML 頁面、無 h1 返回 None
+  - JSON-LD 路徑 regression 驗證
+- 新增 `test_notify.py` Difford's 統計鍵測試（2 個測試案例）
+- 總測試數：508（較前版 +10）
+
 ## [2.17.0] - 2026-04-18
 
 ### 變更

@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Distiller Scraper Scheduled Task
-# Runs weekly on Monday at 10:00 AM using launchd
-# Configuration: com.distiller.scraper.plist
+# Distiller Scraper Entry Script
+# Usage: manual run or Cloud Run container entrypoint
+# Formerly scheduled via local launchd (removed — now Cloud Run only)
 
 set -eo pipefail
 

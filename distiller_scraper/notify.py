@@ -40,7 +40,7 @@ def _fmt_duration(secs: int) -> str:
 class LineNotifier:
     """
     LINE 推播通知器。
-    
+
     封裝 LINE Messaging API 的 OAuth 驗證機制與發送邏輯，提供發送文字訊息、
     成功狀態報告與異常警報的高階方法。
     若初始化時未明確指定憑證，將自動嘗試從環境變數載入。
@@ -122,24 +122,35 @@ class LineNotifier:
             return False
 
     def notify_success(
-        self, mode: str, stats: dict, duration_secs: int = 0, page_errors: int = 0,
+        self,
+        mode: str,
+        stats: dict,
+        duration_secs: int = 0,
+        page_errors: int = 0,
         source: str = "Distiller",
     ) -> bool:
         """
         發送執行成功的狀態報告通知。
-        
+
         Args:
             mode: 執行的模式名稱（如 'full', 'incremental'）。
             stats: 包含 '總記錄數' / '失敗 URL 數' / '類別分布' 等數據的統計字典。
             duration_secs: 執行總耗時（秒）。若大於 0 將顯示於通知內。
             page_errors: 執行過程中的頁面層級錯誤總數。
             source: 資料來源或系統名稱（預設為 'Distiller'）。
-            
+
         Returns:
             bool: 發送成功回傳 True，發生錯誤或未設定憑證回傳 False。
         """
-        total = stats.get("總記錄數", stats.get("total_records", "?"))
-        failed = stats.get("失敗 URL 數", stats.get("failed_urls", "?"))
+        total = stats.get(
+            "總記錄數",
+            stats.get("total_records", stats.get("爬取新增", "?")),
+        )
+        failed = stats.get(
+            "失敗 URL 數",
+            stats.get("failed_urls", stats.get("失敗", "?")),
+        )
+        skipped = stats.get("跳過（已是最新）", None)
         categories = stats.get("類別分布", stats.get("category_distribution", {}))
         lines = [
             f"✅ 【{source} 資料更新完成】",
@@ -149,13 +160,17 @@ class LineNotifier:
         ]
         if duration_secs > 0:
             lines.append(f"⏱ 總計耗時：{_fmt_duration(duration_secs)}")
-        
-        lines.extend([
-            "",
-            "📊 執行結果",
-            f"  • 總計記錄：{total} 筆",
-            f"  • 失敗連結：{failed} 筆",
-        ])
+
+        lines.extend(
+            [
+                "",
+                "📊 執行結果",
+                f"  • 總計記錄：{total} 筆",
+                f"  • 失敗連結：{failed} 筆",
+            ]
+        )
+        if skipped is not None:
+            lines.append(f"  • 跳過記錄：{skipped} 筆（已是最新）")
         if page_errors > 0:
             lines.append(f"  • 頁面錯誤：{page_errors} 筆")
 
@@ -189,7 +204,7 @@ class LineNotifier:
     ) -> bool:
         """
         發送執行失敗或發生異常的警報通知。
-        
+
         Args:
             mode: 執行的模式名稱（如 'full', 'incremental'）。
             error: 主要錯誤訊息或例外狀況的簡要說明。
@@ -197,7 +212,7 @@ class LineNotifier:
             error_details: 詳細的錯誤堆疊 (Traceback) 或附加的診斷資訊。
             duration_secs: 任務中斷前的已執行耗時（秒）。
             source: 資料來源或系統名稱（預設為 'Distiller'）。
-            
+
         Returns:
             bool: 發送成功回傳 True，發生錯誤或未設定憑證回傳 False。
         """
@@ -209,19 +224,20 @@ class LineNotifier:
         ]
         if duration_secs > 0:
             lines.append(f"⏱ 中斷前耗時：{_fmt_duration(duration_secs)}")
-        
-        lines.extend([
-            "",
-            "⚠️ 錯誤原因",
-            f"  {error or '未知錯誤，請檢查系統日誌。'}",
-        ])
+
+        lines.extend(
+            [
+                "",
+                "⚠️ 錯誤原因",
+                f"  {error or '未知錯誤，請檢查系統日誌。'}",
+            ]
+        )
         if page_errors > 0:
             lines.append(f"  • 頁面錯誤數：{page_errors} 筆")
-        
+
         if error_details:
             lines.append("")
             lines.append("📋 錯誤詳情")
             lines.append(_SEP_LIGHT)
             lines.append(error_details)
         return self.send("\n".join(lines))
-

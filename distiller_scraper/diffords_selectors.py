@@ -163,16 +163,60 @@ class DiffordsExtractor:
     # ------------------------------------------------------------------
 
     @classmethod
+    def _extract_html_only(cls, soup: BeautifulSoup) -> Optional[dict]:
+        """純 HTML fallback：當 JSON-LD 不存在時，從 HTML 結構提取雞尾酒資料。
+
+        可提取欄位：name、glassware、garnish、prepare、instructions、
+                    review、history、abv、ingredients_html。
+        無法提取欄位（設為 None）：description、tags、rating_value、
+                    rating_count、calories、prep_time_minutes、
+                    date_published、ingredients_generic。
+        """
+        # 名稱：從 <h1> 取得
+        h1 = soup.find("h1")
+        name = h1.get_text(strip=True) if h1 else None
+        if not name:
+            return None  # 連名稱都沒有，確實不是有效的雞尾酒頁面
+
+        # 食材：從 HTML 表格取得（與 JSON-LD 路徑使用相同方法）
+        ingredients_html = cls.extract_ingredients_html(soup)
+
+        return {
+            # ── 無 JSON-LD，基本欄位設為 None ──
+            "name":               name,
+            "description":        None,
+            "tags":               [],
+            "rating_value":       None,
+            "rating_count":       None,
+            "calories":           None,
+            "prep_time_minutes":  None,
+            "date_published":     None,
+            # ── HTML 欄位（正常提取）──
+            "glassware":          cls.extract_glassware(soup),
+            "garnish":            cls._h3_next_text(soup, "Garnish:"),
+            "prepare":            cls._h3_next_text(soup, "Prepare:"),
+            "instructions":       cls._h3_next_text(soup, "How to make:"),
+            "review":             cls._h3_next_text(soup, "Review:"),
+            "history":            cls._h3_next_text(soup, "History:"),
+            "abv":                cls.extract_abv(soup),
+            # ── 食材（僅 HTML 來源，無通用名稱）──
+            "ingredients_generic": [],
+            "ingredients_html":    ingredients_html,
+        }
+
+    @classmethod
     def extract_all(cls, html: str) -> Optional[dict]:
         """從完整 HTML 提取所有欄位，回傳標準化 dict；失敗時回傳 None。
 
         優先使用 JSON-LD（穩定），HTML parsing 補充其餘欄位。
+        若 JSON-LD 不存在但 HTML 結構有效，使用 HTML-only fallback 提取。
         """
         ld = cls.extract_json_ld(html)
-        if not ld:
-            return None
-
         soup = BeautifulSoup(html, "html.parser")
+
+        if not ld:
+            return cls._extract_html_only(soup)
+
         rating = ld.get("aggregateRating") or {}
 
         return {

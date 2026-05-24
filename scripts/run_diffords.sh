@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Distiller Difford's Scheduled Task
-# Runs weekly at 4:00 AM using launchd
-# Configuration: com.distiller.diffords.plist
+# Distiller Difford's Entry Script
+# Usage: manual run or Cloud Run container entrypoint
+# Formerly scheduled via local launchd (removed — now Cloud Run only)
 
 set -eo pipefail
 

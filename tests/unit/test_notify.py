@@ -260,6 +260,32 @@ class TestNotifySuccess:
         msg = mock_send.call_args[0][0]
         assert "頁面錯誤" not in msg
 
+    def test_diffords_stat_keys(self, notifier):
+        stats = {
+            "爬取新增": 50,
+            "跳過（已是最新）": 200,
+            "失敗": 3,
+        }
+        with patch.object(notifier, "send", return_value=True) as mock_send:
+            notifier.notify_success("incremental", stats, source="Difford's Guide")
+        msg = mock_send.call_args[0][0]
+        assert "50" in msg
+        assert "3" in msg
+        assert "200" in msg
+        assert "跳過記錄" in msg
+        assert "Difford's Guide" in msg
+
+    def test_diffords_no_skipped_key(self, notifier):
+        stats = {
+            "爬取新增": 10,
+            "失敗": 0,
+        }
+        with patch.object(notifier, "send", return_value=True) as mock_send:
+            notifier.notify_success("test", stats, source="Difford's Guide")
+        msg = mock_send.call_args[0][0]
+        assert "10" in msg
+        assert "跳過記錄" not in msg
+
 
 # ---------------------------------------------------------------------------
 # notify_failure()
@@ -336,5 +362,3 @@ class TestNotifyFailure:
             notifier.notify_failure("full", "Timeout", duration_secs=0)
         msg = mock_send.call_args[0][0]
         assert "⏱" not in msg
-
-

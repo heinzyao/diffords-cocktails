@@ -199,7 +199,7 @@ class DiffordsGuideScraper:
 
         data = DiffordsExtractor.extract_all(resp.text)
         if data is None:
-            logger.warning("JSON-LD 解析失敗，可能不是雞尾酒詳情頁: %s", url)
+            logger.warning("提取失敗（無 JSON-LD 且 HTML 無有效名稱）: %s", url)
         return data
 
     def scrape(
@@ -260,11 +260,16 @@ class DiffordsGuideScraper:
                 if entry.lastmod:
                     self.lastmod_map[entry.url] = entry.lastmod
                 self.stats.scraped += 1
+                ing_generic = data.get("ingredients_generic") or []
+                ing_html = data.get("ingredients_html") or []
+                ing_count = len(ing_generic) or len(ing_html)
+                source = "JSON-LD" if ing_generic else "HTML"
                 logger.info(
-                    "  ✓ %s（評分 %s，%d 種食材）",
+                    "  ✓ %s（評分 %s，%d 種食材，%s）",
                     data.get("name", "?"),
-                    data.get("rating_value", "?"),
-                    len(data.get("ingredients_generic") or []),
+                    data.get("rating_value", "N/A"),
+                    ing_count,
+                    source,
                 )
 
             # 隨機延遲（尊重網站頻率限制）

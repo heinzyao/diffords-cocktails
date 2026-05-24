@@ -46,12 +46,10 @@ distiller/
 ├── Dockerfile.bot             # LINE Bot container
 ├── ingredient_mapping.json     # Ingredient-to-Spirit-Type Mapping (117 entries)
 ├── scripts/
-│   ├── run_scraper.sh         # Scheduled Scraping Script
-│   ├── run_diffords.sh         # Difford's Scheduled Scraping Script
-│   └── run_bot.sh             # LINE Bot Launch Script (used for launchd)
+│   ├── run_scraper.sh         # Scheduled Scraping Script (manual / Cloud Run)
+│   ├── run_diffords.sh         # Difford's Scheduled Scraping Script (manual / Cloud Run)
+│   └── run_bot.sh             # LINE Bot Launch Script
 ├── AGENTS.md                  # Multi-agent Collaboration Logs
-├── com.distiller.scraper.plist.example  # Distiller launchd template (copy & edit paths)
-├── com.distiller.diffords.plist.example # Difford's launchd template (copy & edit paths)
 └── CHANGELOG.md               # Changelog
 ```
 
@@ -229,7 +227,7 @@ The SQLite schema involves:
 
 #### Scheduling and Deduplication Pipeline
 
-`launchd` scheduling handles automated weekly scrapes (every Monday at 10:00 AM) passing through 7 categories (`--mode full --output both --use-api`). Cloud Run also provides an independent schedule for each scraper (Distiller and Difford's Guide) via Cloud Scheduler — run intervals are controlled exclusively by the scheduler, with no in-process time-window guard.
+Scheduling is handled exclusively by **Cloud Run** via **Cloud Scheduler** for each scraper (Distiller and Difford's Guide). Run intervals are controlled entirely by the scheduler, with no in-process time-window guard.
 To ensure idempotence and prevent overlapping data, a 6-layer deduplication logic is applied:
 
 | Layer | Mechanism | Description |
@@ -301,12 +299,10 @@ distiller/
 ├── Dockerfile.bot             # LINE Bot 容器
 ├── ingredient_mapping.json     # 材料-烈酒類型對應表（117 筆）
 ├── scripts/
-│   ├── run_scraper.sh         # 排程爬取腳本
-│   ├── run_diffords.sh         # Difford's 排程爬取腳本
-│   └── run_bot.sh             # Bot 啟動腳本（launchd 用）
+│   ├── run_scraper.sh         # 排程爬取腳本（手動執行 / Cloud Run）
+│   ├── run_diffords.sh         # Difford's 排程爬取腳本（手動執行 / Cloud Run）
+│   └── run_bot.sh             # Bot 啟動腳本
 ├── AGENTS.md                  # 多代理協作紀錄
-├── com.distiller.scraper.plist.example  # Distiller launchd 範本（複製後填入本機路徑）
-├── com.distiller.diffords.plist.example # Difford's launchd 範本（複製後填入本機路徑）
 └── CHANGELOG.md               # 變更紀錄
 ```
 
@@ -484,7 +480,7 @@ SQLite schema 包含：
 
 #### 排程與去重機制
 
-本地 launchd 排程每週一上午 10:00 執行完整爬取（`--mode full --output both --use-api`）；Cloud Run 的 Distiller 爬蟲與 Difford's Guide 爬蟲各有獨立的 Cloud Scheduler 排程，執行間隔完全由排程器控制，程式本身不設時間窗口限制。
+排程統一由 **Cloud Run** 透過 **Cloud Scheduler** 管理，Distiller 爬蟲與 Difford's Guide 爬蟲各有獨立排程。執行間隔完全由排程器控制，程式本身不設時間窗口限制。
 系統透過六層去重機制確保不會重複爬取已有資料：
 
 | 層級 | 機制 | 說明 |

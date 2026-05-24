@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Distiller LINE Bot Service
-# Runs persistently via launchd (KeepAlive = true)
-# Configuration: com.distiller.bot.plist
+# Usage: manual run or Cloud Run container entrypoint
+# Formerly managed via local launchd (removed — now Cloud Run only)
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="$PROJECT_DIR/logs"

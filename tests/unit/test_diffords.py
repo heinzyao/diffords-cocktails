@@ -107,6 +107,45 @@ SAMPLE_SITEMAP_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+# HTML-only fixture：模擬缺少 JSON-LD 但有完整 HTML 結構的頁面
+SAMPLE_HTML_NO_JSON_LD = """
+<html><body>
+<h1>Luchadora</h1>
+<h3 class="m-0">Glass:</h3>
+<p>Old Fashioned Glass</p>
+<h3 class="m-0">Prepare:</h3>
+<p>Chill glass and prepare garnish.</p>
+<h3 class="m-0">How to make:</h3>
+<p>SHAKE all ingredients with ice. STRAIN into glass.</p>
+<h3 class="m-0">Garnish:</h3>
+<p>Lime wheel</p>
+<table class="legacy-ingredients-table">
+  <tbody>
+    <tr><td>45 ml</td><td>Tequila Reposado</td></tr>
+    <tr><td>15 ml</td><td>Mezcal</td></tr>
+    <tr><td>30 ml</td><td>Lime juice</td></tr>
+    <tr><td>15 ml</td><td>Agave syrup</td></tr>
+  </tbody>
+</table>
+<ul><li>23.5% alc./vol. (47° proof)</li></ul>
+</body></html>
+"""
+
+# 最小 HTML：只有 h1，無食材表格
+SAMPLE_HTML_NO_JSON_LD_MINIMAL = """
+<html><body>
+<h1>Mystery Cocktail</h1>
+</body></html>
+"""
+
+# 完全空的 HTML：連 h1 都沒有
+SAMPLE_HTML_NO_JSON_LD_EMPTY = """
+<html><body>
+<p>This is not a cocktail page.</p>
+</body></html>
+"""
+
+
 # ── DiffordsExtractor 測試 ────────────────────────────────────────────
 
 
@@ -200,6 +239,71 @@ class TestDiffordsExtractor:
             == 200
         )
         assert DiffordsExtractor.extract_calories({}) is None
+
+
+class TestDiffordsExtractorHtmlFallback:
+    """測試 HTML-only fallback 路徑（無 JSON-LD 的頁面）。"""
+
+    def test_extract_all_html_only_returns_data(self):
+        """無 JSON-LD 但有完整 HTML 時，應透過 fallback 回傳有效資料。"""
+        data = DiffordsExtractor.extract_all(SAMPLE_HTML_NO_JSON_LD)
+        assert data is not None
+        assert data["name"] == "Luchadora"
+
+    def test_extract_all_html_only_ingredients(self):
+        """HTML fallback 應從 legacy-ingredients-table 提取食材。"""
+        data = DiffordsExtractor.extract_all(SAMPLE_HTML_NO_JSON_LD)
+        assert len(data["ingredients_html"]) == 4
+        assert data["ingredients_html"][0]["amount"] == "45 ml"
+        assert data["ingredients_html"][0]["item"] == "Tequila Reposado"
+        assert data["ingredients_html"][3]["item"] == "Agave syrup"
+        # 無 JSON-LD 時 ingredients_generic 應為空
+        assert data["ingredients_generic"] == []
+
+    def test_extract_all_html_only_html_fields(self):
+        """HTML fallback 應正確提取 glassware、garnish、instructions 等。"""
+        data = DiffordsExtractor.extract_all(SAMPLE_HTML_NO_JSON_LD)
+        assert data["glassware"] == "Old Fashioned Glass"
+        assert data["garnish"] == "Lime wheel"
+        assert data["prepare"] == "Chill glass and prepare garnish."
+        assert "SHAKE" in data["instructions"]
+
+    def test_extract_all_html_only_abv(self):
+        """HTML fallback 應正確提取 ABV。"""
+        data = DiffordsExtractor.extract_all(SAMPLE_HTML_NO_JSON_LD)
+        assert data["abv"] == 23.5
+
+    def test_extract_all_html_only_null_json_ld_fields(self):
+        """HTML fallback 的 JSON-LD 專有欄位應為 None。"""
+        data = DiffordsExtractor.extract_all(SAMPLE_HTML_NO_JSON_LD)
+        assert data["description"] is None
+        assert data["rating_value"] is None
+        assert data["rating_count"] is None
+        assert data["calories"] is None
+        assert data["prep_time_minutes"] is None
+        assert data["date_published"] is None
+        assert data["tags"] == []
+
+    def test_extract_all_html_only_minimal(self):
+        """只有 h1 的最小頁面，應回傳資料（名稱有效即可）。"""
+        data = DiffordsExtractor.extract_all(SAMPLE_HTML_NO_JSON_LD_MINIMAL)
+        assert data is not None
+        assert data["name"] == "Mystery Cocktail"
+        assert data["ingredients_html"] == []
+
+    def test_extract_all_html_only_no_h1_returns_none(self):
+        """連 h1 都沒有的頁面，應回傳 None。"""
+        data = DiffordsExtractor.extract_all(SAMPLE_HTML_NO_JSON_LD_EMPTY)
+        assert data is None
+
+    def test_json_ld_path_still_works(self):
+        """確認原有的 JSON-LD 路徑在修改後仍正常運作。"""
+        data = DiffordsExtractor.extract_all(SAMPLE_HTML)
+        assert data is not None
+        assert data["name"] == "Negroni"
+        assert data["rating_value"] == 4.5
+        assert len(data["ingredients_generic"]) == 3
+        assert len(data["ingredients_html"]) == 3
 
 
 # ── DiffordsStorage 測試 ─────────────────────────────────────────────
