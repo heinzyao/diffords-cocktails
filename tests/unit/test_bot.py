@@ -20,6 +20,9 @@ import requests
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from bot import (
+    _DB_GCS_CHECK_INTERVAL,
+    _db_gcs_checked,
+    _ensure_db_from_gcs,
     _get_cached_token,
     _handle,
     _reply,
@@ -876,3 +879,120 @@ class TestFmtCocktailEmptyDb:
         missing_db_path = str(tmp_path / "nonexistent_diffords.db")
         result = fmt_cocktail_search(missing_db_path, "martini")
         assert result == _DIFFORDS_DB_MISSING
+
+
+class TestEnsureDbFromGcs:
+    """Test _ensure_db_from_gcs GCS freshness check logic."""
+
+    def setup_method(self):
+        """Clear the GCS check cache before each test."""
+        _db_gcs_checked.clear()
+
+    @patch("bot.GCS_BUCKET", "")
+    def test_no_gcs_bucket_returns_file_exists(self, tmp_path):
+        """Without GCS_BUCKET, return True only if local DB exists."""
+        existing = tmp_path / "exists.db"
+        existing.touch()
+        assert _ensure_db_from_gcs(str(existing)) is True
+        assert _ensure_db_from_gcs(str(tmp_path / "missing.db")) is False
+
+    @patch("bot.GCS_BUCKET", "test-bucket")
+    @patch("distiller_scraper.gcs_storage.download_db", return_value=True)
+    @patch("distiller_scraper.gcs_storage.get_blob_updated_time")
+    def test_local_exists_within_interval_skips_gcs(self, mock_updated, mock_dl, tmp_path):
+        """Within check interval, skip GCS metadata query."""
+        db = tmp_path / "test.db"
+        db.touch()
+        db_str = str(db)
+        # Pretend we just checked
+        _db_gcs_checked[db_str] = time.time()
+
+        result = _ensure_db_from_gcs(db_str)
+        assert result is True
+        mock_updated.assert_not_called()
+        mock_dl.assert_not_called()
+
+    @patch("bot.GCS_BUCKET", "test-bucket")
+    @patch("distiller_scraper.gcs_storage.download_db", return_value=True)
+    @patch("distiller_scraper.gcs_storage.get_blob_updated_time")
+    def test_gcs_newer_triggers_redownload(self, mock_updated, mock_dl, tmp_path):
+        """When GCS blob is newer than local file, re-download."""
+        from datetime import datetime, timezone
+
+        db = tmp_path / "test.db"
+        db.touch()
+        db_str = str(db)
+        # Set last check to long ago so it triggers a GCS check
+        _db_gcs_checked[db_str] = 0.0
+
+        # GCS blob is newer (future timestamp)
+        future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        mock_updated.return_value = future
+
+        result = _ensure_db_from_gcs(db_str)
+        assert result is True
+        mock_updated.assert_called_once()
+        mock_dl.assert_called_once()
+
+    @patch("bot.GCS_BUCKET", "test-bucket")
+    @patch("distiller_scraper.gcs_storage.download_db")
+    @patch("distiller_scraper.gcs_storage.get_blob_updated_time")
+    def test_gcs_older_skips_download(self, mock_updated, mock_dl, tmp_path):
+        """When GCS blob is older than local file, don't re-download."""
+        from datetime import datetime, timezone
+
+        db = tmp_path / "test.db"
+        db.touch()
+        db_str = str(db)
+        _db_gcs_checked[db_str] = 0.0
+
+        # GCS blob is very old
+        old = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        mock_updated.return_value = old
+
+        result = _ensure_db_from_gcs(db_str)
+        assert result is True
+        mock_updated.assert_called_once()
+        mock_dl.assert_not_called()
+
+    @patch("bot.GCS_BUCKET", "test-bucket")
+    @patch("distiller_scraper.gcs_storage.download_db")
+    @patch("distiller_scraper.gcs_storage.get_blob_updated_time", return_value=None)
+    def test_gcs_metadata_failure_uses_local(self, mock_updated, mock_dl, tmp_path):
+        """When GCS metadata is unavailable, fall back to local DB."""
+        db = tmp_path / "test.db"
+        db.touch()
+        db_str = str(db)
+        _db_gcs_checked[db_str] = 0.0
+
+        result = _ensure_db_from_gcs(db_str)
+        assert result is True
+        mock_dl.assert_not_called()
+
+    @patch("bot.GCS_BUCKET", "test-bucket")
+    @patch("distiller_scraper.gcs_storage.download_db", return_value=True)
+    @patch("distiller_scraper.gcs_storage.get_blob_updated_time")
+    def test_local_missing_downloads_from_gcs(self, mock_updated, mock_dl, tmp_path):
+        """When local DB doesn't exist, download from GCS."""
+        db_str = str(tmp_path / "missing.db")
+
+        result = _ensure_db_from_gcs(db_str)
+        assert result is True
+        mock_dl.assert_called_once()
+        # Should NOT check blob timestamp (no local file to compare)
+        mock_updated.assert_not_called()
+        # Should record the check time
+        assert db_str in _db_gcs_checked
+
+    @patch("bot.GCS_BUCKET", "test-bucket")
+    @patch("distiller_scraper.gcs_storage.download_db", return_value=False)
+    @patch("distiller_scraper.gcs_storage.get_blob_updated_time")
+    def test_local_missing_download_fails(self, mock_updated, mock_dl, tmp_path):
+        """When local DB missing and GCS download fails, return False."""
+        db_str = str(tmp_path / "missing.db")
+
+        result = _ensure_db_from_gcs(db_str)
+        assert result is False
+        mock_dl.assert_called_once()
+        # Should NOT cache the failed attempt
+        assert db_str not in _db_gcs_checked

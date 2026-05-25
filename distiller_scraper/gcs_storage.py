@@ -79,3 +79,29 @@ def upload_csv(bucket_name: str, blob_prefix: str, local_path: str) -> bool:
     except Exception as exc:
         logger.error("CSV 上傳失敗：%s", exc)
         return False
+
+
+def get_blob_updated_time(
+    bucket_name: str, blob_name: str
+) -> "datetime.datetime | None":
+    """取得 GCS blob 的最後更新時間（UTC）。
+
+    Returns:
+        datetime（含時區） — 成功取得
+        None             — 失敗或 blob 不存在
+    """
+    import datetime
+
+    try:
+        from google.cloud import storage  # type: ignore[import]
+
+        client = storage.Client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        blob.reload()  # 取得最新 metadata
+        return blob.updated  # datetime with tzinfo=UTC
+    except Exception as exc:
+        logger.warning(
+            "GCS 取得 blob 更新時間失敗（%s/%s）：%s", bucket_name, blob_name, exc
+        )
+        return None

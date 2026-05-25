@@ -2,6 +2,24 @@
 
 本檔案記錄專案的所有重要變更。
 
+## [2.18.1] - 2026-05-24
+
+### 修復
+- **雞尾酒統計資料不更新**（`bot.py`、`distiller_scraper/gcs_storage.py`）：
+  - 問題：`_ensure_db_from_gcs()` 在本地 DB 已存在時直接返回 `True`，導致爬蟲更新 GCS 上的 DB 後，Bot 容器仍使用舊的本地快取版本
+  - 修復：新增 GCS blob 時間戳比對邏輯，每 5 分鐘檢查一次 GCS 上的 DB 是否比本地版本更新，若是則自動重新下載
+  - `gcs_storage.py`：新增 `get_blob_updated_time()` 函式，取得 GCS blob 的 `updated` 時間戳
+  - `bot.py`：重寫 `_ensure_db_from_gcs()`，加入節流快取（`_db_gcs_checked`）與時間戳比對邏輯
+
+### 測試
+- 新增 `TestEnsureDbFromGcs` 測試類別（7 個測試案例）：
+  - 無 GCS_BUCKET 時依本地檔案存在與否返回
+  - 節流區間內跳過 GCS 查詢
+  - GCS 較新時觸發重新下載
+  - GCS 較舊時跳過下載
+  - GCS metadata 查詢失敗時 fallback 使用本地
+  - 本地不存在時從 GCS 下載（成功/失敗）
+
 ## [2.18.0] - 2026-05-24
 
 ### 修復

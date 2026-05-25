@@ -247,16 +247,57 @@ def _start_diffords(mode: str, db_path: str) -> None:
         _launch_scraper_thread(cmd, _diffords_lock, _diffords_state)
 
 
+# GCS 資料庫更新檢查：記錄各 DB 最後與 GCS 比對的時間（UNIX timestamp）
+_db_gcs_checked: dict[str, float] = {}
+_DB_GCS_CHECK_INTERVAL = 300  # 每 5 分鐘最多檢查一次 GCS
+
+
 def _ensure_db_from_gcs(db_path: str, blob_name: str = GCS_DB_BLOB) -> bool:
-    """如果資料庫不存在且設定了 GCS_BUCKET，嘗試從 GCS 下載。"""
-    if Path(db_path).exists():
-        return True
+    """確保本地資料庫為最新版本。
+
+    行為：
+    1. 本地 DB 不存在 → 從 GCS 下載
+    2. 本地 DB 存在且距離上次檢查不足 5 分鐘 → 直接使用本地
+    3. 本地 DB 存在但超過 5 分鐘 → 比對 GCS blob 更新時間，若 GCS 較新則重新下載
+    """
     if not GCS_BUCKET:
-        return False
+        return Path(db_path).exists()
+
     from distiller_scraper import gcs_storage
 
+    if Path(db_path).exists():
+        # 節流：避免每次請求都查詢 GCS metadata
+        now = time.time()
+        last_checked = _db_gcs_checked.get(db_path, 0.0)
+        if now - last_checked < _DB_GCS_CHECK_INTERVAL:
+            return True
+
+        # 比對 GCS blob 時間戳與本地檔案 mtime
+        blob_updated = gcs_storage.get_blob_updated_time(GCS_BUCKET, blob_name)
+        _db_gcs_checked[db_path] = now  # 無論結果，都標記為已檢查
+
+        if blob_updated is None:
+            # 無法取得 GCS 資訊（網路問題等），使用本地版本
+            return True
+
+        local_mtime = Path(db_path).stat().st_mtime
+        if blob_updated.timestamp() > local_mtime:
+            logger.info(
+                "GCS 版本較新，重新下載：%s（GCS: %s, 本地: %s）",
+                db_path,
+                blob_updated.isoformat(),
+                datetime.fromtimestamp(local_mtime).isoformat(),
+            )
+            return gcs_storage.download_db(GCS_BUCKET, blob_name, db_path)
+
+        return True
+
+    # 本地 DB 不存在，從 GCS 下載
     logger.info("資料庫不存在，嘗試從 GCS 下載：%s", db_path)
-    return gcs_storage.download_db(GCS_BUCKET, blob_name, db_path)
+    result = gcs_storage.download_db(GCS_BUCKET, blob_name, db_path)
+    if result:
+        _db_gcs_checked[db_path] = time.time()
+    return result
 
 
 # ---------------------------------------------------------------------------
