@@ -19,6 +19,33 @@
 
 ## 🤖 代理協作歷史
 
+### 2026-05-25 | OpenCode Sisyphus
+
+**工作內容**：
+1. **修復 GCS DB 新鮮度檢查，防止 Bot 使用過期本地快取**
+   - 根因：`_ensure_db_from_gcs()` 在本地 DB 已存在時直接返回 `True`，爬蟲更新 GCS 上的 DB 後，Bot 容器仍使用舊的本地快取版本，導致雞尾酒統計資料不更新
+   - 修復：重寫 `_ensure_db_from_gcs()`，新增 GCS blob 時間戳比對邏輯，每 5 分鐘檢查一次 GCS 上的 DB 是否比本地版本更新，若是則自動重新下載
+   - `gcs_storage.py`：新增 `get_blob_updated_time()` 函式，取得 GCS blob 的 `updated` 時間戳
+   - `bot.py`：加入節流快取（`_db_gcs_checked`）與時間戳比對邏輯
+
+2. **新增單元測試**
+   - 新增 `TestEnsureDbFromGcs` 測試類別（7 個測試案例）：無 GCS_BUCKET、節流區間內跳過、GCS 較新時觸發重新下載、GCS 較舊時跳過、metadata 查詢失敗 fallback、本地不存在時下載成功/失敗
+
+3. **部署**
+   - 提交並推送 `fix(bot, gcs_storage)` commit 至 origin/main
+   - 觸發 Cloud Build 成功建置並推送三個容器映像檔（distiller-scraper、distiller-bot、distiller-diffords）
+
+**主要變更**：
+- 修改 `bot.py`（`_ensure_db_from_gcs()` 重寫，新增 GCS 新鮮度檢查）
+- 修改 `distiller_scraper/gcs_storage.py`（新增 `get_blob_updated_time()`）
+- 修改 `tests/unit/test_bot.py`（新增 `TestEnsureDbFromGcs` 7 個測試）
+- 修改 `CHANGELOG.md`（新增 v2.18.1 紀錄）
+- **總計：472 個測試全數通過**
+
+**Commit**：`5bd710d`
+
+---
+
 ### 2026-04-18 | Gemini CLI (Session 1)
 
 **工作內容**：
@@ -650,7 +677,8 @@ python run.py --mode full
 - [x] Difford's Guide 獨立排程（diffords_config.py + run_diffords.sh + launchd plist）✅ 2026-04-13
 - [x] 調酒篩選查詢（按材料/標籤/評分/ABV + 交叉查詢可調酒推薦）✅ 2026-04-13
 - [x] LINE Bot 調酒指令（6 個 `調酒` 子指令 + CLI `cocktail-*` 子指令）✅ 2026-04-13
+- [x] GCS DB 新鮮度檢查修復（Bot 自動同步最新雞尾酒資料庫）✅ 2026-05-25
 
 ---
 
-*最後更新：2026-04-13 by OpenCode Atlas Orchestrator*
+*最後更新：2026-05-25 by OpenCode Sisyphus*
