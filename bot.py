@@ -712,7 +712,7 @@ def fmt_cocktail_search(diffords_db_path: str, keyword: str) -> str:
     from distiller_scraper.diffords_storage import DiffordsStorage
 
     with DiffordsStorage(diffords_db_path) as storage:
-        results = storage.search_cocktails(keyword)
+        results = storage.search_cocktails(keyword, limit=20)
     if not results:
         return f"❓ 找不到含有「{keyword}」的調酒，請嘗試縮短關鍵字。"
     lines: list[str] = [f"🔍 搜尋「{keyword}」：{len(results)} 筆", _SEP_LIGHT]

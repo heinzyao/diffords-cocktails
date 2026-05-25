@@ -121,6 +121,7 @@ class DistillerScraperV2:
         注意：Docker/Cloud Run 環境仍使用原始 Selenium（Dockerfile 不含 uc）
         """
         try:
+            import subprocess
             import undetected_chromedriver as uc
 
             logger.info("正在啟動 Chrome WebDriver (undetected-chromedriver)...")
@@ -134,10 +135,23 @@ class DistillerScraperV2:
             options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
             options.page_load_strategy = "none"
 
+            # 偵測已安裝的 Chrome 主版號，避免 uc 自動下載不相符的 ChromeDriver
+            chrome_main_version = None
+            try:
+                raw = subprocess.check_output(
+                    ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "--version"],
+                    stderr=subprocess.DEVNULL,
+                ).decode()
+                chrome_main_version = int(raw.strip().split()[-1].split(".")[0])
+                logger.info(f"偵測到 Chrome 版本：{chrome_main_version}")
+            except Exception:
+                pass
+
             self.driver = uc.Chrome(
                 options=options,
                 headless=self.headless,
                 use_subprocess=True,
+                version_main=chrome_main_version,
             )
             self.driver.set_page_load_timeout(ScraperConfig.PAGE_LOAD_TIMEOUT)
 
