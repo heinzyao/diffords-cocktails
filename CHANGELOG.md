@@ -2,6 +2,18 @@
 
 本檔案記錄專案的所有重要變更。
 
+## [2.19.0] - 2026-05-26
+
+### 修復
+- **ChromeDriver 版本不符導致爬蟲無法啟動**（`distiller_scraper/scraper.py`）：
+  - 問題：`undetected-chromedriver` 自動下載了 ChromeDriver 149，但本機 Chrome 為 148，造成 `session not created` 錯誤
+  - 修復：`start_driver()` 新增動態版本偵測，透過執行 `Google Chrome --version` 取得主版號，傳入 `uc.Chrome(version_main=...)` 確保 ChromeDriver 版本與瀏覽器一致
+  - 日後 Chrome 升級時無需修改程式碼，自動對應
+
+- **雞尾酒搜尋結果上限過少**（`bot.py`）：
+  - 問題：`fmt_cocktail_search()` 呼叫 `search_cocktails()` 未指定 limit，使用預設值 10，LINE 回覆固定只顯示 10 筆
+  - 修復：搜尋結果上限從 10 調整為 20
+
 ## [2.18.1] - 2026-05-24
 
 ### 修復

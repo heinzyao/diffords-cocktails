@@ -19,6 +19,28 @@
 
 ## 🤖 代理協作歷史
 
+### 2026-05-26 | Claude Code (Sonnet 4.6)
+
+**工作內容**：
+1. **修復 ChromeDriver 版本不符導致爬蟲無法啟動**（`distiller_scraper/scraper.py`）
+   - 根因：`undetected-chromedriver` 自動下載 ChromeDriver 149，本機 Chrome 為 148，造成 `session not created` 錯誤
+   - 修復：`start_driver()` 新增動態版本偵測，執行 `Google Chrome --version` 取得主版號後傳入 `uc.Chrome(version_main=...)`
+   - 日後 Chrome 升級可自動對應，無需手動更新
+
+2. **修復雞尾酒搜尋結果上限過少**（`bot.py`）
+   - 根因：`fmt_cocktail_search()` 呼叫 `search_cocktails()` 未指定 limit，預設值 10
+   - 修復：搜尋上限調整為 20 筆
+
+**主要變更**：
+- 修改 `distiller_scraper/scraper.py`（`start_driver()` 加入 Chrome 版本偵測）
+- 修改 `bot.py`（`fmt_cocktail_search` limit 10 → 20）
+- 修改 `CHANGELOG.md`（新增 v2.19.0 紀錄）
+- **總計：513 個測試通過，2 個預存失敗（`test_pagination.py`，與本次無關）**
+
+**Commit**：`5173572`
+
+---
+
 ### 2026-05-25 | OpenCode Sisyphus
 
 **工作內容**：
