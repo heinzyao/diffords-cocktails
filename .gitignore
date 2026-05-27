@@ -22,10 +22,6 @@ venv/
 # 開發工具筆記（非程式碼產物）
 .sisyphus/
 
-# macOS launchd 設定（含本地絕對路徑，機器專屬）
-# 請複製 *.plist.example 並修改路徑後自行安裝
-com.distiller.*.plist
-
 # Logs
 *.log
 logs/

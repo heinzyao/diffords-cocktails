@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Distiller Difford's Entry Script
+# Difford's Guide Entry Script
 # Usage: manual run or Cloud Run container entrypoint
 # Formerly scheduled via local launchd (removed — now Cloud Run only)
 
@@ -27,7 +27,7 @@ LOG_FILE="$LOG_DIR/diffords_${TIMESTAMP}.log"
 cd "$PROJECT_DIR"
 
 echo "==========================================" | tee -a "$LOG_FILE"
-echo "Distiller Difford's - Scheduled Run" | tee -a "$LOG_FILE"
+echo "Difford's Guide Cocktails - Scheduled Run" | tee -a "$LOG_FILE"
 echo "Start Time: $(date)" | tee -a "$LOG_FILE"
 echo "==========================================" | tee -a "$LOG_FILE"
 
@@ -49,10 +49,10 @@ if [ "$EXIT_CODE" -eq 0 ]; then
     echo "Log saved to: $LOG_FILE" | tee -a "$LOG_FILE"
     
     # Send success notification (macOS)
-    osascript -e 'display notification "Distiller diffords scraper completed successfully!" with title "Diffords Success"' 2>/dev/null || true
+    osascript -e 'display notification "Difford'\''s Guide scraper completed successfully!" with title "Diffords Success"' 2>/dev/null || true
     
     # Optional: Send email notification (requires mail setup)
-    # echo "Diffords scraper completed successfully at $(date)" | mail -s "Distiller Diffords - Success" your-email@example.com
+    # echo "Diffords scraper completed successfully at $(date)" | mail -s "Diffords - Success" your-email@example.com
     
 else
     echo "" | tee -a "$LOG_FILE"
@@ -61,10 +61,10 @@ else
     echo "Log saved to: $LOG_FILE" | tee -a "$LOG_FILE"
     
     # Send failure notification (macOS)
-    osascript -e 'display notification "Distiller diffords scraper failed! Check logs." with title "Diffords Error"' 2>/dev/null || true
+    osascript -e 'display notification "Difford'\''s Guide scraper failed! Check logs." with title "Diffords Error"' 2>/dev/null || true
     
     # Optional: Send email notification on failure
-    # echo "Diffords scraper failed at $(date). Check logs at $LOG_FILE" | mail -s "Distiller Diffords - FAILED" your-email@example.com
+    # echo "Diffords scraper failed at $(date). Check logs at $LOG_FILE" | mail -s "Diffords - FAILED" your-email@example.com
     
     exit 1
 fi

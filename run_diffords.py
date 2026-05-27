@@ -27,10 +27,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from distiller_scraper.diffords_config import DIFFORDS_NOTIFY_SOURCE
-from distiller_scraper.diffords_scraper import DiffordsGuideScraper
-from distiller_scraper.diffords_storage import DiffordsStorage
-from distiller_scraper.notify import LineNotifier
+from diffords_guide.config import DIFFORDS_NOTIFY_SOURCE
+from diffords_guide.notify import LineNotifier
+from diffords_guide.scraper import DiffordsGuideScraper
+from diffords_guide.storage import DiffordsStorage
 
 logging.basicConfig(
     level=logging.INFO,
@@ -136,7 +136,7 @@ def main():
     gcs_bucket = os.getenv("GCS_BUCKET", "")
     gcs_db_blob = os.getenv("GCS_DB_BLOB", "diffords.db")
     if gcs_bucket:
-        from distiller_scraper import gcs_storage
+        from diffords_guide import gcs_storage
 
         print(f"☁️  從 GCS 下載 DB ({gcs_bucket}/{gcs_db_blob})…")
         gcs_storage.download_db(gcs_bucket, gcs_db_blob, args.db_path)
@@ -154,7 +154,7 @@ def main():
 
     # ── GCS 上傳 ─────────────────────────────────────────────────────
     if gcs_bucket:
-        from distiller_scraper import gcs_storage
+        from diffords_guide import gcs_storage
 
         print(f"\n☁️  上傳 DB 至 GCS ({gcs_bucket}/{gcs_db_blob})…")
         gcs_storage.upload_db(gcs_bucket, gcs_db_blob, args.db_path)

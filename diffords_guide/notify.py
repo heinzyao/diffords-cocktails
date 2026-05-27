@@ -127,7 +127,7 @@ class LineNotifier:
         stats: dict,
         duration_secs: int = 0,
         page_errors: int = 0,
-        source: str = "Distiller",
+        source: str = "Difford's Guide",
     ) -> bool:
         """
         發送執行成功的狀態報告通知。
@@ -137,7 +137,7 @@ class LineNotifier:
             stats: 包含 '總記錄數' / '失敗 URL 數' / '類別分布' 等數據的統計字典。
             duration_secs: 執行總耗時（秒）。若大於 0 將顯示於通知內。
             page_errors: 執行過程中的頁面層級錯誤總數。
-            source: 資料來源或系統名稱（預設為 'Distiller'）。
+            source: 資料來源或系統名稱（預設為 "Difford's Guide"）。
 
         Returns:
             bool: 發送成功回傳 True，發生錯誤或未設定憑證回傳 False。
@@ -200,7 +200,7 @@ class LineNotifier:
         page_errors: int = 0,
         error_details: str = "",
         duration_secs: int = 0,
-        source: str = "Distiller",
+        source: str = "Difford's Guide",
     ) -> bool:
         """
         發送執行失敗或發生異常的警報通知。
@@ -211,7 +211,7 @@ class LineNotifier:
             page_errors: 執行過程中的頁面層級錯誤總數。
             error_details: 詳細的錯誤堆疊 (Traceback) 或附加的診斷資訊。
             duration_secs: 任務中斷前的已執行耗時（秒）。
-            source: 資料來源或系統名稱（預設為 'Distiller'）。
+            source: 資料來源或系統名稱（預設為 "Difford's Guide"）。
 
         Returns:
             bool: 發送成功回傳 True，發生錯誤或未設定憑證回傳 False。

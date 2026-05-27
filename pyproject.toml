@@ -1,39 +1,21 @@
 [project]
-name = "distiller-scraper"
-version = "2.5.1"
-description = "從 Distiller.com 爬取烈酒評論資料的 Python 爬蟲"
+name = "diffords-cocktails"
+version = "3.0.0"
+description = "以 Difford's Guide 為資料來源的雞尾酒酒譜爬蟲、SQLite 查詢工具與 LINE Bot"
 requires-python = ">=3.9"
 dependencies = [
     "requests",
     "flask",
     "beautifulsoup4",
-    "pandas",
     "lxml",
-    "selenium>=4.20.0,<4.30.0",
     "python-dotenv",
     "google-cloud-storage>=3.9.0",
     "google-cloud-run>=0.15.0",
     "gunicorn>=23.0.0",
-    "anthropic>=0.40.0",
-    "undetected-chromedriver>=3.5.5",
-    "setuptools>=82.0.1",
-    "playwright>=1.59.0",
-    "playwright-stealth>=2.0.3",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
     "pytest-mock>=3.12.0",
-]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = "-v --tb=short -m 'not slow and not network'"
-markers = [
-    "slow: 執行速度較慢的測試",
-    "network: 需要網路連線的測試",
 ]

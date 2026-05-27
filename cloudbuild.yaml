@@ -1,56 +1,34 @@
 steps:
-  # 建置爬蟲容器（含 Chrome，~1.2 GB）
-  - name: gcr.io/cloud-builders/docker
-    args:
-      - build
-      - -f
-      - Dockerfile.scraper
-      - -t
-      - gcr.io/$PROJECT_ID/distiller-scraper:$COMMIT_SHA
-      - -t
-      - gcr.io/$PROJECT_ID/distiller-scraper:latest
-      - .
-    timeout: 1200s
-
-  # 推送爬蟲容器
-  - name: gcr.io/cloud-builders/docker
-    args: [push, --all-tags, gcr.io/$PROJECT_ID/distiller-scraper]
-
-  # 建置 Bot 容器（輕量，~200 MB）
-  - name: gcr.io/cloud-builders/docker
-    args:
-      - build
-      - -f
-      - Dockerfile.bot
-      - -t
-      - gcr.io/$PROJECT_ID/distiller-bot:$COMMIT_SHA
-      - -t
-      - gcr.io/$PROJECT_ID/distiller-bot:latest
-      - .
-
-  # 推送 Bot 容器
-  - name: gcr.io/cloud-builders/docker
-    args: [push, --all-tags, gcr.io/$PROJECT_ID/distiller-bot]
-
-  # 建置 Difford's Guide 爬蟲容器（輕量，~200 MB）
   - name: gcr.io/cloud-builders/docker
     args:
       - build
       - -f
       - Dockerfile.diffords
       - -t
-      - gcr.io/$PROJECT_ID/distiller-diffords:$COMMIT_SHA
+      - gcr.io/$PROJECT_ID/diffords-cocktails-scraper:$COMMIT_SHA
       - -t
-      - gcr.io/$PROJECT_ID/distiller-diffords:latest
+      - gcr.io/$PROJECT_ID/diffords-cocktails-scraper:latest
       - .
 
-  # 推送 Difford's Guide 爬蟲容器
   - name: gcr.io/cloud-builders/docker
-    args: [push, --all-tags, gcr.io/$PROJECT_ID/distiller-diffords]
+    args: [push, --all-tags, gcr.io/$PROJECT_ID/diffords-cocktails-scraper]
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.bot
+      - -t
+      - gcr.io/$PROJECT_ID/diffords-cocktails-bot:$COMMIT_SHA
+      - -t
+      - gcr.io/$PROJECT_ID/diffords-cocktails-bot:latest
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags, gcr.io/$PROJECT_ID/diffords-cocktails-bot]
 
 images:
-  - gcr.io/$PROJECT_ID/distiller-scraper
-  - gcr.io/$PROJECT_ID/distiller-bot
-  - gcr.io/$PROJECT_ID/distiller-diffords
+  - gcr.io/$PROJECT_ID/diffords-cocktails-scraper
+  - gcr.io/$PROJECT_ID/diffords-cocktails-bot
 
 timeout: 1800s

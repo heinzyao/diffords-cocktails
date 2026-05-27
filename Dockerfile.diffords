@@ -1,6 +1,4 @@
-# Difford's Guide 爬蟲容器（輕量版）
-# 因使用 requests + BeautifulSoup（無需 Selenium），不需安裝 Chrome
-# 映像大小約 200MB（vs Dockerfile.scraper 的 ~800MB）
+# Difford's Guide 爬蟲容器
 
 # Stage 1: 取得 amd64 版 uv binary
 FROM --platform=linux/amd64 ghcr.io/astral-sh/uv:latest AS uv-binary
@@ -20,7 +18,5 @@ RUN uv sync --no-dev --frozen
 # 複製程式碼
 COPY . .
 
-# 預設：增量更新模式（排程執行）
-# Cloud Run Job 可透過 container_overrides.args 覆寫為 --mode full
 ENTRYPOINT ["uv", "run", "python", "run_diffords.py"]
 CMD ["--mode", "incremental", "--db-path", "diffords.db", "--notify-line"]

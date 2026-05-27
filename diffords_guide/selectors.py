@@ -238,7 +238,7 @@ class DiffordsExtractor:
             "history":            cls._h3_next_text(soup, "History:"),
             "abv":                cls.extract_abv(soup),
             # ── 食材（雙來源）──
-            # ingredients_generic：JSON-LD 通用名稱，供推薦引擎匹配烈酒類別
+            # ingredients_generic：JSON-LD 通用名稱，供查詢與資料分析使用
             # ingredients_html：HTML 真實品牌名稱，供顯示用
             "ingredients_generic": cls.parse_ingredients_json_ld(ld.get("recipeIngredient") or []),
             "ingredients_html":    cls.extract_ingredients_html(soup),

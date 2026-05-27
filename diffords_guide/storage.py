@@ -5,61 +5,23 @@ Schema 設計說明
 --------------
 cocktails              — 雞尾酒主表（以 Difford's 原始 ID 為 PK）
 cocktail_ingredients   — 食材正規化表（1:N，含通用名/品牌名雙欄）
-diffords_scrape_runs   — 爬取執行記錄（鏡像 spirits 端的 scrape_runs）
+diffords_scrape_runs   — 爬取執行記錄
 
 增量更新設計
 -----------
 - cocktails.lastmod 儲存 sitemap 的 <lastmod> 日期
 - 爬取前比對 sitemap lastmod vs DB lastmod：相同則跳過
-- cocktail_ingredients 採「先刪後插」策略（同 flavor_profiles）：
-  確保食材順序與份量總是與最新爬取結果一致
+- cocktail_ingredients 採「先刪後插」策略，確保食材順序與份量總是與最新爬取結果一致
 """
 
 import json
 import logging
 import sqlite3
-from contextlib import closing
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
-
-_NON_SPIRIT_SENTINEL = "_non_spirit"
-
-
-def load_ingredient_mapping() -> dict[str, Any]:
-    """Load ingredient mapping from project root.
-
-    Returns empty dict on failure.
-    """
-    try:
-        mapping_path = Path(__file__).parent.parent / "ingredient_mapping.json"
-        with mapping_path.open(encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as exc:
-        logger.error("Failed to load ingredient mapping: %s", exc)
-        return {}
-
-
-def get_user_spirit_types(distiller_db_path: str) -> list[str]:
-    """Fetch distinct spirit_type values from distiller DB.
-
-    Returns empty list on failure.
-    """
-    if not distiller_db_path:
-        return []
-    try:
-        with closing(sqlite3.connect(distiller_db_path)) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT DISTINCT spirit_type FROM spirits WHERE spirit_type IS NOT NULL"
-            ).fetchall()
-        return [row[0] for row in rows if row[0]]
-    except Exception as exc:
-        logger.error("Failed to load user spirit types: %s", exc)
-        return []
-
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS cocktails (
@@ -465,75 +427,6 @@ class DiffordsStorage:
             (min_abv, max_abv, limit),
         ).fetchall()
         return [self._attach_ingredients(dict(r)) for r in rows]
-
-    def get_makeable_cocktails(
-        self,
-        spirit_types: list[str],
-        ingredient_mapping: dict[str, Any],
-        limit: int = 20,
-    ) -> list[dict[str, Any]]:
-        if not ingredient_mapping:
-            return []
-
-        normalized_spirits = {s.strip().lower() for s in spirit_types if s.strip()}
-        rows = self.conn.execute(
-            """
-            SELECT * FROM cocktails
-            ORDER BY rating_value DESC NULLS LAST
-            """
-        ).fetchall()
-
-        results: list[dict[str, Any]] = []
-        for row in rows:
-            cocktail = self._attach_ingredients(dict(row))
-            ingredients = [
-                (ing.get("item_generic") or ing.get("item") or "").strip().lower()
-                for ing in cocktail.get("ingredients", [])
-            ]
-            required: set[str] = set()
-            matched: set[str] = set()
-            has_mapped = False
-
-            for ingredient in ingredients:
-                if not ingredient:
-                    continue
-                if ingredient not in ingredient_mapping:
-                    continue
-                has_mapped = True
-                mapped = ingredient_mapping[ingredient]
-                if mapped == _NON_SPIRIT_SENTINEL:
-                    continue
-                required.add(ingredient)
-                mapped_spirits = {s.strip().lower() for s in mapped}
-                if normalized_spirits & mapped_spirits:
-                    matched.add(ingredient)
-
-            if not has_mapped:
-                continue
-            if not required:
-                cocktail.update(
-                    {
-                        "match_score": 100,
-                        "matched_ingredients": [],
-                        "missing_ingredients": [],
-                    }
-                )
-            else:
-                if not normalized_spirits or required != matched:
-                    continue
-                cocktail.update(
-                    {
-                        "match_score": 100,
-                        "matched_ingredients": sorted(matched),
-                        "missing_ingredients": [],
-                    }
-                )
-
-            results.append(cocktail)
-            if len(results) >= limit:
-                break
-
-        return results
 
     def _attach_ingredients(self, cocktail: dict[str, Any]) -> dict[str, Any]:
         ings = self.conn.execute(

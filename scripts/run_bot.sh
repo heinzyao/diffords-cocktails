@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Distiller LINE Bot Service
+# Difford's Guide LINE Bot Service
 # Usage: manual run or Cloud Run container entrypoint
 # Formerly managed via local launchd (removed — now Cloud Run only)
 

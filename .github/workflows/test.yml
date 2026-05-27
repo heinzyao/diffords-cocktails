@@ -27,36 +27,5 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
-      - name: Run unit tests
-        run: uv run pytest tests/unit -v --tb=short
-
-      - name: Run integration tests
-        run: uv run pytest tests/integration -v --tb=short
-
-  # 端到端測試（可選，需要較長時間）
-  e2e-test:
-    runs-on: ubuntu-latest
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Set up Python 3.12
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync --dev
-
-      - name: Install Chrome
-        uses: browser-actions/setup-chrome@v1
-        with:
-          chrome-version: stable
-
-      - name: Run E2E tests
-        run: uv run pytest tests/e2e -v --tb=short -m "slow or network"
-        continue-on-error: true  # E2E 測試失敗不阻擋整體流程
+      - name: Run tests
+        run: uv run pytest -v --tb=short

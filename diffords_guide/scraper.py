@@ -42,9 +42,9 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from .diffords_config import DEFAULT_DELAY_MAX, DEFAULT_DELAY_MIN, SITEMAP_URL, _HEADERS
-from .diffords_selectors import DiffordsExtractor
-from .diffords_storage import DiffordsStorage
+from .config import DEFAULT_DELAY_MAX, DEFAULT_DELAY_MIN, SITEMAP_URL, _HEADERS
+from .selectors import DiffordsExtractor
+from .storage import DiffordsStorage
 
 logger = logging.getLogger(__name__)
 
