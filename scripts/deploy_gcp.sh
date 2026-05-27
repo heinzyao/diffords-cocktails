@@ -26,13 +26,16 @@ docker push "gcr.io/${PROJECT_ID}/diffords-cocktails-bot:latest"
 gcloud run jobs update diffords-cocktails-scraper \
   --image "gcr.io/${PROJECT_ID}/diffords-cocktails-scraper:latest" \
   --region "$REGION" \
+  --set-env-vars "GCS_BUCKET=${BUCKET_NAME},GCS_DB_BLOB=diffords.db" \
+  --set-secrets "LINE_CHANNEL_ID=LINE_CHANNEL_ID:latest,LINE_CHANNEL_SECRET=LINE_CHANNEL_SECRET:latest,LINE_USER_ID=LINE_USER_ID:latest" \
   || gcloud run jobs create diffords-cocktails-scraper \
     --image "gcr.io/${PROJECT_ID}/diffords-cocktails-scraper:latest" \
     --region "$REGION" \
     --memory 512Mi \
     --cpu 1 \
     --task-timeout 7200 \
-    --set-env-vars "GCS_BUCKET=${BUCKET_NAME},GCS_DB_BLOB=diffords.db"
+    --set-env-vars "GCS_BUCKET=${BUCKET_NAME},GCS_DB_BLOB=diffords.db" \
+    --set-secrets "LINE_CHANNEL_ID=LINE_CHANNEL_ID:latest,LINE_CHANNEL_SECRET=LINE_CHANNEL_SECRET:latest,LINE_USER_ID=LINE_USER_ID:latest"
 
 gcloud run deploy diffords-cocktails-bot \
   --image "gcr.io/${PROJECT_ID}/diffords-cocktails-bot:latest" \
@@ -42,6 +45,7 @@ gcloud run deploy diffords-cocktails-bot \
   --min-instances 0 \
   --max-instances 2 \
   --allow-unauthenticated \
-  --set-env-vars "GCS_BUCKET=${BUCKET_NAME},GCS_DB_BLOB=diffords.db,DIFFORDS_JOB_NAME=diffords-cocktails-scraper"
+  --set-env-vars "GCS_BUCKET=${BUCKET_NAME},GCS_DB_BLOB=diffords.db,DIFFORDS_JOB_NAME=diffords-cocktails-scraper" \
+  --set-secrets "LINE_CHANNEL_ID=LINE_CHANNEL_ID:latest,LINE_CHANNEL_SECRET=LINE_CHANNEL_SECRET:latest,LINE_USER_ID=LINE_USER_ID:latest"
 
 echo "Deployment complete."
