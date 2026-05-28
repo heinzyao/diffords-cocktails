@@ -139,7 +139,11 @@ def main():
         from diffords_guide import gcs_storage
 
         print(f"☁️  從 GCS 下載 DB ({gcs_bucket}/{gcs_db_blob})…")
-        gcs_storage.download_db(gcs_bucket, gcs_db_blob, args.db_path)
+        try:
+            gcs_storage.download_db(gcs_bucket, gcs_db_blob, args.db_path)
+        except Exception as e:
+            logger.error("GCS 下載失敗，中止執行以避免覆蓋線上資料庫：%s", e)
+            sys.exit(1)
 
     # ── 執行爬蟲 ─────────────────────────────────────────────────────
     _exc: Exception | None = None

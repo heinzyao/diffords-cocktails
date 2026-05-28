@@ -13,28 +13,34 @@ logger = logging.getLogger(__name__)
 
 
 def download_db(bucket_name: str, blob_name: str, local_path: str) -> bool:
-    """從 GCS 下載 SQLite 資料庫。首次部署（檔案不存在）時自動建立空白 DB。
+    """從 GCS 下載 SQLite 資料庫。
 
     Returns:
         True  — 成功從 GCS 下載
-        False — 下載失敗（已建立空白 DB）
-    """
-    try:
-        from google.cloud import storage  # type: ignore[import]
+        False — Blob 不存在（首次部署），已建立空白 DB
 
-        client = storage.Client()
-        bucket = client.bucket(bucket_name)
-        blob = bucket.blob(blob_name)
-        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+    Raises:
+        Exception — 其他下載錯誤（網路、權限等），不建立空白 DB，讓呼叫方決定如何處理
+    """
+    from google.cloud import storage  # type: ignore[import]
+    from google.api_core.exceptions import NotFound  # type: ignore[import]
+
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+    Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+    try:
         blob.download_to_filename(local_path)
-        logger.info("已從 GCS 下載 %s/%s → %s", bucket_name, blob_name, local_path)
-        return True
-    except Exception as exc:
-        logger.warning("GCS 下載失敗（%s/%s），建立空白 DB：%s", bucket_name, blob_name, exc)
-        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+    except NotFound:
+        logger.info("GCS blob 不存在（%s/%s），首次部署：建立空白 DB", bucket_name, blob_name)
         conn = sqlite3.connect(local_path)
         conn.close()
         return False
+    except Exception as exc:
+        logger.error("GCS 下載失敗（%s/%s）：%s", bucket_name, blob_name, exc)
+        raise
+    logger.info("已從 GCS 下載 %s/%s → %s", bucket_name, blob_name, local_path)
+    return True
 
 
 def upload_db(bucket_name: str, blob_name: str, local_path: str) -> bool:

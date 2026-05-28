@@ -150,6 +150,11 @@ def _start_diffords(mode: str, db_path: str) -> None:
         )
         client.run_job(request=run_v2.RunJobRequest(name=name, overrides=overrides))
         logger.info("Cloud Run Job started: %s", name)
+        # 遠端 job 在獨立容器執行，此 bot 實例無法追蹤其進度；立即清除本地狀態
+        with _scrape_lock:
+            _scrape_state["running"] = False
+            _scrape_state["mode"] = None
+            _scrape_state["started_at"] = None
         return
 
     cmd = [

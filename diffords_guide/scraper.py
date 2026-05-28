@@ -255,7 +255,13 @@ class DiffordsGuideScraper:
                 data["url"] = entry.url
                 data["lastmod"] = entry.lastmod
                 if self.storage:
-                    self.storage.save_cocktail(data)
+                    saved = self.storage.save_cocktail(data)
+                    if not saved:
+                        self.stats.failed += 1
+                        self.failed_urls.append(entry.url)
+                        logger.warning("  ✗ 儲存失敗（save_cocktail 回傳 False）")
+                        time.sleep(random.uniform(self.delay_min, self.delay_max))
+                        continue
                 self.seen_urls.add(entry.url)
                 if entry.lastmod:
                     self.lastmod_map[entry.url] = entry.lastmod
