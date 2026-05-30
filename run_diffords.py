@@ -157,11 +157,16 @@ def main():
     print(f"結束時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     # ── GCS 上傳 ─────────────────────────────────────────────────────
-    if gcs_bucket:
+    # 只有爬蟲成功時才回寫線上 DB，避免失敗或半更新狀態覆蓋 GCS 版本。
+    if gcs_bucket and success and _exc is None:
         from diffords_guide import gcs_storage
 
         print(f"\n☁️  上傳 DB 至 GCS ({gcs_bucket}/{gcs_db_blob})…")
-        gcs_storage.upload_db(gcs_bucket, gcs_db_blob, args.db_path)
+        if not gcs_storage.upload_db(gcs_bucket, gcs_db_blob, args.db_path):
+            logger.error("GCS 上傳失敗")
+            success = False
+    elif gcs_bucket:
+        logger.warning("爬蟲未成功完成，略過 GCS 上傳以保留線上 DB")
 
     # ── LINE 通知 ─────────────────────────────────────────────────────
     if args.notify_line:
