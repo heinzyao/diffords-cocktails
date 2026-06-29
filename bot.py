@@ -196,69 +196,126 @@ def _open_storage(db_path: str):
 def fmt_cocktail_search(db_path: str, keyword: str, limit: int = 5) -> str:
     storage = _open_storage(db_path)
     if storage is None:
-        return "資料庫不存在，請先執行：雞尾酒爬蟲 test"
+        return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
     try:
         rows = storage.search_cocktails(keyword, limit=limit)
     finally:
         storage.close()
     if not rows:
-        return f"找不到符合「{keyword}」的雞尾酒。"
-    lines = [f"搜尋「{keyword}」"]
+        return f"🔍 找不到符合「{keyword}」的雞尾酒，請嘗試其他關鍵字！"
+
+    lines = [
+        f"🔍 搜尋「{keyword}」的結果：",
+        "──────────────────"
+    ]
     for idx, cocktail in enumerate(rows, 1):
         rating = cocktail.get("rating_value")
-        rating_text = f"{rating:.1f}" if isinstance(rating, (int, float)) else "N/A"
-        lines.append(f"{idx}. {cocktail['name']} ({rating_text})")
+        rating_text = f"{rating:.1f} ★" if isinstance(rating, (int, float)) else "N/A"
+        lines.append(f"{idx}. 🌟 {cocktail['name']} ({rating_text})")
+    lines.extend([
+        "──────────────────",
+        "💡 輸入「雞尾酒酒譜 <酒名>」即可查看完整調製步驟！"
+    ])
     return "\n".join(lines)
 
 
 def fmt_cocktail_info(db_path: str, name: str) -> str:
     storage = _open_storage(db_path)
     if storage is None:
-        return "資料庫不存在，請先執行：雞尾酒爬蟲 test"
+        return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
     try:
         cocktail = storage.get_cocktail_by_name(name)
     finally:
         storage.close()
     if not cocktail:
-        return f"找不到符合「{name}」的雞尾酒。"
+        return f"🔍 找不到符合「{name}」的雞尾酒，請檢查拼字或嘗試其他關鍵字！"
 
-    lines = [cocktail["name"]]
-    for label, key in [
-        ("評分", "rating_value"),
-        ("ABV", "abv"),
-        ("杯型", "glassware"),
-        ("裝飾", "garnish"),
-    ]:
-        value = cocktail.get(key)
-        if value not in (None, ""):
-            lines.append(f"{label}: {value}")
+    lines = []
+    lines.append(f"🍸 {cocktail['name']}")
+    lines.append("──────────────────")
 
+    # 基礎屬性
+    rating = cocktail.get("rating_value")
+    if rating not in (None, ""):
+        rating_count = cocktail.get("rating_count")
+        if rating_count:
+            lines.append(f"⭐ 評分：{rating:.1f} ★ ({rating_count} 票)")
+        else:
+            lines.append(f"⭐ 評分：{rating:.1f} ★")
+
+    abv = cocktail.get("abv")
+    if abv not in (None, ""):
+        lines.append(f"🔥 酒精濃度 (ABV)：{abv}%")
+
+    glass = cocktail.get("glassware")
+    if glass not in (None, ""):
+        lines.append(f"🥛 推薦杯型：{glass}")
+
+    garnish = cocktail.get("garnish")
+    if garnish not in (None, ""):
+        lines.append(f"🍊 推薦裝飾：{garnish}")
+
+    # 準備步驟
+    prepare = cocktail.get("prepare")
+    if prepare not in (None, ""):
+        lines.extend(["", "📝 準備步驟：", f"{prepare}"])
+
+    # 食材
     ingredients = cocktail.get("ingredients") or []
     if ingredients:
-        lines.append("")
-        lines.append("食材:")
+        lines.extend(["", "🛒 食材配方："])
         for ingredient in ingredients[:12]:
             amount = ingredient.get("amount") or ""
             item = ingredient.get("item") or ""
-            lines.append(f"- {amount} {item}".strip())
+            lines.append(f" ▫ {amount} {item}".rstrip())
 
-    instructions = _truncate(cocktail.get("instructions"), 1200)
+    # 作法
+    instructions = cocktail.get("instructions")
     if instructions:
-        lines.extend(["", "作法:", instructions])
+        trunc_instructions = _truncate(instructions, 1000)
+        lines.extend(["", "📋 調製方法：", trunc_instructions])
+
+    # 評語與歷史背景
+    review = cocktail.get("review")
+    history = cocktail.get("history")
+    notes = []
+    if review:
+        notes.append(f"💬 評語：{_truncate(review, 300)}")
+    if history:
+        notes.append(f"📜 歷史：{_truncate(history, 300)}")
+
+    if notes:
+        lines.extend(["", "💡 酒譜背景與筆記："])
+        lines.extend(notes)
+
     if cocktail.get("url"):
-        lines.extend(["", cocktail["url"]])
-    return "\n".join(lines)
+        lines.extend(["", f"🌐 原文網址：\n{cocktail['url']}"])
+
+    return "\n".join(lines).strip()
 
 
 def fmt_cocktail_stats(db_path: str) -> str:
     storage = _open_storage(db_path)
     if storage is None:
-        return "資料庫不存在，請先執行：雞尾酒爬蟲 test"
+        return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
     try:
         stats = storage.get_stats()
     finally:
         storage.close()
-    return "\n".join(["Difford's Guide 資料庫統計", *[f"{k}: {v}" for k, v in stats.items()]])
+
+    total = stats.get("總雞尾酒數", 0)
+    avg_rating = stats.get("平均評分", "N/A")
+    last_run = stats.get("最後爬取", "從未")
+
+    lines = [
+        "📊 Difford's Guide 雞尾酒資料庫統計",
+        "──────────────────",
+        f"📈 總收錄酒譜：{total} 款",
+        f"⭐ 平均社群評分：{avg_rating} ★",
+        f"🕒 最後更新時間：{last_run}",
+        "──────────────────"
+    ]
+    return "\n".join(lines)
 
 
 def fmt_cocktail_list(
@@ -267,59 +324,89 @@ def fmt_cocktail_list(
     ingredient: str | None = None,
     tag: str | None = None,
     min_rating: float | None = None,
+    min_abv: float | None = None,
     limit: int = 10,
 ) -> str:
     storage = _open_storage(db_path)
     if storage is None:
-        return "資料庫不存在，請先執行：雞尾酒爬蟲 test"
+        return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
     try:
         if ingredient:
             rows = storage.filter_by_ingredient(ingredient, limit=limit)
-            title = f"含「{ingredient}」"
+            title = f"含有「{ingredient}」"
         elif tag:
             rows = storage.filter_by_tag(tag, limit=limit)
             title = f"標籤「{tag}」"
         elif min_rating is not None:
             rows = storage.filter_by_rating(min_rating=min_rating, limit=limit)
-            title = f"評分 >= {min_rating}"
+            title = f"評分 >= {min_rating} ★"
+        elif min_abv is not None:
+            rows = storage.filter_by_abv(min_abv=min_abv, limit=limit)
+            title = f"ABV >= {min_abv}%"
         else:
             rows = storage.get_top_rated(limit=limit)
-            title = "評分排序"
+            title = "社群高分精選"
     finally:
         storage.close()
     if not rows:
-        return "找不到符合條件的雞尾酒。"
-    lines = [f"雞尾酒列表（{title}）"]
+        return f"🔍 找不到符合「{title}」篩選條件的雞尾酒。"
+
+    lines = [
+        f"📋 雞尾酒列表（{title}）",
+        "──────────────────"
+    ]
     for idx, cocktail in enumerate(rows, 1):
         rating = cocktail.get("rating_value")
-        rating_text = f"{rating:.1f}" if isinstance(rating, (int, float)) else "N/A"
-        lines.append(f"{idx}. {cocktail['name']} ({rating_text})")
+        rating_text = f"{rating:.1f} ★" if isinstance(rating, (int, float)) else "N/A"
+        lines.append(f"{idx}. 🌟 {cocktail['name']} ({rating_text})")
+    lines.extend([
+        "──────────────────",
+        "💡 輸入「雞尾酒酒譜 <酒名>」即可查看完整調製步驟！"
+    ])
     return "\n".join(lines)
 
 
 def fmt_status() -> str:
     with _scrape_lock:
         if not _scrape_state["running"]:
-            return "Difford's Guide 爬蟲：閒置"
+            return "🤖 Difford's Guide 爬蟲任務：目前閒置中"
         started = _scrape_state.get("started_at")
         elapsed = int(time.time() - started) if isinstance(started, (int, float)) else 0
-        return f"Difford's Guide 爬蟲：執行中（{_scrape_state['mode']}，{elapsed}s）"
+        return f"⚡ Difford's Guide 爬蟲任務：正在執行中...\n模式：{_scrape_state['mode']}\n已耗時：{elapsed} 秒"
 
 
 def fmt_help() -> str:
     return "\n".join(
         [
-            "Difford's Guide 雞尾酒指令",
-            "雞尾酒搜尋 <關鍵字>",
-            "雞尾酒酒譜 <名稱>",
-            "雞尾酒詳情 <名稱>",
-            "雞尾酒列表",
-            "雞尾酒列表 材料 <材料>",
-            "雞尾酒列表 標籤 <標籤>",
-            "雞尾酒列表 評分 <最低分>",
-            "雞尾酒統計",
-            "雞尾酒爬蟲 <test|incremental|full>",
-            "狀態",
+            "🍹 Difford's Guide 雞尾酒助理指令",
+            "",
+            "🔍 【探索與搜尋】",
+            "▪ 說明 / 指令 / Help",
+            "  顯示此指令清單",
+            "▪ 雞尾酒搜尋 <關鍵字>",
+            "  搜尋名稱符合關鍵字的雞尾酒",
+            "▪ 雞尾酒酒譜 <酒名>",
+            "  查詢指定雞尾酒的食材與作法",
+            "",
+            "📋 【精選與篩選】",
+            "▪ 雞尾酒列表",
+            "  列出社群高分經典雞尾酒",
+            "▪ 雞尾酒列表 材料 <材料>",
+            "  依特定材料/基酒篩選",
+            "▪ 雞尾酒列表 標籤 <標籤>",
+            "  依特定風味標籤或風格篩選",
+            "▪ 雞尾酒列表 評分 <最低評分>",
+            "  篩選社群高評分的酒譜",
+            "▪ 雞尾酒列表 酒精濃度 <最低%>",
+            "  篩選酒精濃度高於指定濃度的酒譜",
+            "",
+            "📊 【系統與爬蟲】",
+            "▪ 雞尾酒統計",
+            "  顯示資料庫統計資訊",
+            "▪ 狀態",
+            "  檢查資料庫爬蟲的最新運作狀態",
+            "▪ 雞尾酒爬蟲 <test|incremental|full>",
+            "  啟動資料庫更新任務 (管理員專用)",
         ]
     )
 
@@ -355,6 +442,9 @@ def parse_command(text: str) -> tuple[str, list[Any]]:
     match = re.match(r"^雞尾酒列表\s+評分\s+([\d.]+)$", text, re.I)
     if match:
         return "list", [{"min_rating": float(match.group(1))}]
+    match = re.match(r"^雞尾酒列表\s+(?:酒精濃度|abv)\s+([\d.]+)\s*%?$", text, re.I)
+    if match:
+        return "list", [{"min_abv": float(match.group(1))}]
     if lower in ("雞尾酒列表", "cocktail list", "list"):
         return "list", [{}]
 
@@ -379,7 +469,7 @@ def handle_message(text: str, db_path: str = DB_DEFAULT) -> str:
         mode = args[0]
         with _scrape_lock:
             if _scrape_state["running"]:
-                return f"Difford's Guide 爬蟲正在執行中（{_scrape_state['mode']}）。"
+                return f"⚠️ Difford's Guide 爬蟲任務目前正在執行中（模式：{_scrape_state['mode']}）。請勿重複啟動。"
             _scrape_state["running"] = True
             _scrape_state["mode"] = mode
             _scrape_state["started_at"] = time.time()
@@ -391,9 +481,9 @@ def handle_message(text: str, db_path: str = DB_DEFAULT) -> str:
                 _scrape_state["mode"] = None
                 _scrape_state["started_at"] = None
             logger.exception("Failed to start scraper")
-            return f"Difford's Guide 爬蟲啟動失敗：{exc}"
-        return f"Difford's Guide 爬蟲已啟動（{mode}）。"
-    return "看不懂這個指令。請輸入「說明」。"
+            return f"❌ Difford's Guide 爬蟲任務啟動失敗：{exc}"
+        return f"🚀 Difford's Guide 爬蟲任務已成功啟動（模式：{mode}）！"
+    return "💡 無法識別此指令。請輸入「說明」查看所有可用指令！"
 
 
 @app.route("/health", methods=["GET"])

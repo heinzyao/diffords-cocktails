@@ -89,6 +89,7 @@ Supported message commands:
 | `雞尾酒列表 材料 <ingredient>` | Filter by ingredient |
 | `雞尾酒列表 標籤 <tag>` | Filter by tag |
 | `雞尾酒列表 評分 <rating>` | Filter by minimum rating |
+| `雞尾酒列表 酒精濃度 <abv>` | Filter by minimum ABV |
 | `雞尾酒統計` | Show database stats |
 | `雞尾酒爬蟲 <test\|incremental\|full>` | Trigger scraper |
 | `狀態` | Show scraper status |
@@ -170,6 +171,7 @@ uv run python query.py list --rating 4.5
 | `雞尾酒列表 材料 <材料>` | 依材料篩選 |
 | `雞尾酒列表 標籤 <標籤>` | 依標籤篩選 |
 | `雞尾酒列表 評分 <最低分>` | 依評分篩選 |
+| `雞尾酒列表 酒精濃度 <最低百分比>` | 依酒精濃度篩選 |
 | `雞尾酒統計` | 顯示資料庫摘要 |
 | `雞尾酒爬蟲 <test\|incremental\|full>` | 啟動爬蟲 |
 | `狀態` | 查看爬蟲狀態 |

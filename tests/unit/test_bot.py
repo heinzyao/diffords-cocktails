@@ -11,6 +11,8 @@ def test_parse_cocktail_commands():
     assert bot.parse_command("雞尾酒酒譜 Negroni") == ("info", ["Negroni"])
     assert bot.parse_command("雞尾酒列表 材料 gin") == ("list", [{"ingredient": "gin"}])
     assert bot.parse_command("雞尾酒列表 評分 4.5") == ("list", [{"min_rating": 4.5}])
+    assert bot.parse_command("雞尾酒列表 酒精濃度 15") == ("list", [{"min_abv": 15.0}])
+    assert bot.parse_command("雞尾酒列表 abv 15%") == ("list", [{"min_abv": 15.0}])
     assert bot.parse_command("雞尾酒爬蟲 incremental") == ("scrape", ["incremental"])
 
 
@@ -26,6 +28,17 @@ def test_format_cocktail_info(tmp_path):
     assert "STIR all ingredients" in result
 
 
+def test_format_cocktail_list_by_abv(tmp_path):
+    db_path = tmp_path / "diffords.db"
+    with DiffordsStorage(str(db_path)) as storage:
+        storage.save_cocktail(_sample_cocktail())
+
+    result = bot.fmt_cocktail_list(str(db_path), min_abv=10.0)
+
+    assert "Negroni" in result
+    assert "ABV >= 10.0%" in result
+
+
 def test_handle_message_unknown():
     assert "說明" in bot.handle_message("not a command")
 
@@ -35,7 +48,7 @@ def test_start_scraper_sets_running_state(tmp_path):
     with patch.object(bot, "_start_diffords") as mock_start:
         result = bot.handle_message("雞尾酒爬蟲 test", db_path=str(db_path))
 
-    assert "已啟動" in result
+    assert "成功啟動" in result
     mock_start.assert_called_once_with("test", str(db_path))
     assert bot._scrape_state["running"] is True
 
@@ -68,7 +81,8 @@ def test_ensure_db_from_gcs_downloads_missing_db(monkeypatch, tmp_path):
     monkeypatch.setattr(bot, "GCS_BUCKET", "bucket")
     db_path = tmp_path / "diffords.db"
 
-    fake_storage = MagicMock()
-    fake_storage.download_db.return_value = True
-    with patch.dict("sys.modules", {"diffords_guide.gcs_storage": fake_storage}):
+    with (
+        patch("diffords_guide.gcs_storage.download_db", return_value=True),
+        patch("diffords_guide.gcs_storage.get_blob_updated_time", return_value=None),
+    ):
         assert bot._ensure_db_from_gcs(str(db_path), "diffords.db") is True
