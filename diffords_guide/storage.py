@@ -150,7 +150,7 @@ class DiffordsStorage:
     def _upsert_cocktail(self, cur: sqlite3.Cursor, data: dict[str, Any]) -> int:
         row = self._prepare_row(data)
         existing = cur.execute(
-            "SELECT id FROM cocktails WHERE url = ?", (row["url"],)
+            "SELECT id FROM cocktails WHERE id = ?", (row["id"],)
         ).fetchone()
 
         if existing:
@@ -163,9 +163,9 @@ class DiffordsStorage:
                     instructions=:instructions, review=:review, history=:history,
                     tags=:tags, rating_value=:rating_value, rating_count=:rating_count,
                     calories=:calories, prep_time_min=:prep_time_min, abv=:abv,
-                    date_published=:date_published, lastmod=:lastmod,
+                    date_published=:date_published, url=:url, lastmod=:lastmod,
                     scraped_at=CURRENT_TIMESTAMP
-                WHERE url=:url
+                WHERE id=:id
             """,
                 row,
             )
