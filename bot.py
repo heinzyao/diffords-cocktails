@@ -20,10 +20,10 @@ from dotenv import load_dotenv
 from flask import Flask, abort, request
 
 from diffords_guide.config import DIFFORDS_DB_DEFAULT, GCS_DIFFORDS_DB_BLOB
+from diffords_guide.notify import fetch_access_token
 
 _ = load_dotenv()
 
-LINE_TOKEN_URL = "https://api.line.me/v2/oauth/accessToken"
 LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
 MSG_LIMIT = 4900
 
@@ -43,27 +43,6 @@ _db_gcs_checked: dict[str, float] = {}
 _DB_GCS_CHECK_INTERVAL = 300
 
 
-def _get_access_token(channel_id: str, channel_secret: str) -> str | None:
-    try:
-        resp = requests.post(
-            LINE_TOKEN_URL,
-            data={
-                "grant_type": "client_credentials",
-                "client_id": channel_id,
-                "client_secret": channel_secret,
-            },
-            timeout=15,
-        )
-    except requests.RequestException as exc:
-        logger.error("LINE token request failed: %s", exc)
-        return None
-    if resp.status_code != 200:
-        logger.warning("LINE token request failed: %s", resp.text[:200])
-        return None
-    token = resp.json().get("access_token")
-    return token if isinstance(token, str) else None
-
-
 def _get_cached_token(channel_id: str, channel_secret: str) -> str | None:
     now = time.time()
     token = _token_cache.get("token")
@@ -71,7 +50,7 @@ def _get_cached_token(channel_id: str, channel_secret: str) -> str | None:
     if isinstance(token, str) and isinstance(expires_at, (int, float)):
         if now < expires_at - 60:
             return token
-    token = _get_access_token(channel_id, channel_secret)
+    token = fetch_access_token(channel_id, channel_secret)
     if token:
         _token_cache["token"] = token
         _token_cache["expires_at"] = now + 82800

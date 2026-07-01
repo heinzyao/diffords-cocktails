@@ -23,7 +23,28 @@ LINE_TOKEN_URL = "https://api.line.me/v2/oauth/accessToken"
 LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 
 _SEP = "━━━━━━━━━━━━━━"
-_SEP_LIGHT = "──────────────"
+
+
+def fetch_access_token(channel_id: str, channel_secret: str) -> str | None:
+    """用 Channel ID + Secret 向 LINE 換取短期 Access Token，失敗回傳 None。"""
+    try:
+        resp = requests.post(
+            LINE_TOKEN_URL,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": channel_id,
+                "client_secret": channel_secret,
+            },
+            timeout=15,
+        )
+    except requests.RequestException as exc:
+        logger.error("LINE Token 請求失敗：%s", exc)
+        return None
+    if resp.status_code != 200:
+        logger.warning("LINE Token 取得失敗：%s %s", resp.status_code, resp.text[:200])
+        return None
+    token = resp.json().get("access_token")
+    return token if isinstance(token, str) else None
 
 
 def _fmt_duration(secs: int) -> str:
@@ -70,26 +91,7 @@ class LineNotifier:
         return bool(self.channel_id and self.channel_secret and self.user_id)
 
     def _get_access_token(self) -> str | None:
-        """用 Channel ID + Secret 產生短期 Access Token。"""
-        try:
-            resp = requests.post(
-                LINE_TOKEN_URL,
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": self.channel_id,
-                    "client_secret": self.channel_secret,
-                },
-                timeout=15,
-            )
-            if resp.status_code != 200:
-                logger.warning(
-                    "LINE Token 取得失敗：%s %s", resp.status_code, resp.text
-                )
-                return None
-            return resp.json()["access_token"]
-        except requests.RequestException as exc:
-            logger.error("LINE Token 請求失敗：%s", exc)
-            return None
+        return fetch_access_token(self.channel_id, self.channel_secret)
 
     def send(self, text: str) -> bool:
         """發送文字推播訊息，成功回傳 True。"""
@@ -126,7 +128,6 @@ class LineNotifier:
         mode: str,
         stats: dict,
         duration_secs: int = 0,
-        page_errors: int = 0,
         source: str = "Difford's Guide",
     ) -> bool:
         """
@@ -134,24 +135,16 @@ class LineNotifier:
 
         Args:
             mode: 執行的模式名稱（如 'full', 'incremental'）。
-            stats: 包含 '總記錄數' / '失敗 URL 數' / '類別分布' 等數據的統計字典。
+            stats: 包含 '爬取新增' / '失敗' / '跳過（已是最新）' 等數據的統計字典。
             duration_secs: 執行總耗時（秒）。若大於 0 將顯示於通知內。
-            page_errors: 執行過程中的頁面層級錯誤總數。
             source: 資料來源或系統名稱（預設為 "Difford's Guide"）。
 
         Returns:
             bool: 發送成功回傳 True，發生錯誤或未設定憑證回傳 False。
         """
-        total = stats.get(
-            "總記錄數",
-            stats.get("total_records", stats.get("爬取新增", "?")),
-        )
-        failed = stats.get(
-            "失敗 URL 數",
-            stats.get("failed_urls", stats.get("失敗", "?")),
-        )
+        total = stats.get("爬取新增", "?")
+        failed = stats.get("失敗", "?")
         skipped = stats.get("跳過（已是最新）", None)
-        categories = stats.get("類別分布", stats.get("category_distribution", {}))
         lines = [
             f"✅ 【{source} 資料更新完成】",
             _SEP,
@@ -171,25 +164,6 @@ class LineNotifier:
         )
         if skipped is not None:
             lines.append(f"  • 跳過記錄：{skipped} 筆（已是最新）")
-        if page_errors > 0:
-            lines.append(f"  • 頁面錯誤：{page_errors} 筆")
-
-        if categories:
-            cat_total = (
-                sum(categories.values())
-                if all(isinstance(v, (int, float)) for v in categories.values())
-                else 0
-            )
-            lines.append("")
-            lines.append("📂 資料類別分布")
-            lines.append(_SEP_LIGHT)
-            for k, v in categories.items():
-                if cat_total > 0 and isinstance(v, (int, float)):
-                    bar_len = round(v / cat_total * 10)
-                    bar = "█" * bar_len + "░" * (10 - bar_len)
-                    lines.append(f"  {k:<10} {bar} {v} 筆")
-                else:
-                    lines.append(f"  {k:<10} {v} 筆")
 
         return self.send("\n".join(lines))
 
@@ -197,8 +171,6 @@ class LineNotifier:
         self,
         mode: str,
         error: str = "",
-        page_errors: int = 0,
-        error_details: str = "",
         duration_secs: int = 0,
         source: str = "Difford's Guide",
     ) -> bool:
@@ -208,8 +180,6 @@ class LineNotifier:
         Args:
             mode: 執行的模式名稱（如 'full', 'incremental'）。
             error: 主要錯誤訊息或例外狀況的簡要說明。
-            page_errors: 執行過程中的頁面層級錯誤總數。
-            error_details: 詳細的錯誤堆疊 (Traceback) 或附加的診斷資訊。
             duration_secs: 任務中斷前的已執行耗時（秒）。
             source: 資料來源或系統名稱（預設為 "Difford's Guide"）。
 
@@ -232,12 +202,4 @@ class LineNotifier:
                 f"  {error or '未知錯誤，請檢查系統日誌。'}",
             ]
         )
-        if page_errors > 0:
-            lines.append(f"  • 頁面錯誤數：{page_errors} 筆")
-
-        if error_details:
-            lines.append("")
-            lines.append("📋 錯誤詳情")
-            lines.append(_SEP_LIGHT)
-            lines.append(error_details)
         return self.send("\n".join(lines))
