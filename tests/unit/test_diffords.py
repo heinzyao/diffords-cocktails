@@ -110,6 +110,19 @@ def test_storage_saves_and_queries_cocktail(tmp_path):
         assert stats["總雞尾酒數"] == 1
 
 
+def test_storage_upserts_cocktail_when_diffords_slug_changes(tmp_path):
+    db_path = tmp_path / "diffords.db"
+    changed_url = "https://www.diffordsguide.com/cocktails/recipe/1254/negroni-cocktail"
+    with DiffordsStorage(str(db_path)) as storage:
+        assert storage.save_cocktail(_sample_cocktail()) is True
+        assert storage.save_cocktail(_sample_cocktail("Negroni Cocktail", changed_url)) is True
+
+        found = storage.get_cocktail_by_id(1254)
+        assert found["name"] == "Negroni Cocktail"
+        assert found["url"] == changed_url
+        assert storage.get_stats()["總雞尾酒數"] == 1
+
+
 def test_scraper_parse_sitemap():
     response = MagicMock()
     response.content = SITEMAP_XML
