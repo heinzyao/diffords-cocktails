@@ -49,6 +49,8 @@ jobs:
           gcloud run jobs update diffords-cocktails-scraper \
             --image gcr.io/$PROJECT_ID/diffords-cocktails-scraper:$GITHUB_SHA \
             --region $REGION \
+            --set-env-vars GCS_BUCKET=$BUCKET,GCS_DB_BLOB=diffords.db \
+            --set-secrets LINE_CHANNEL_ID=DISTILLER_LINE_CHANNEL_ID:latest,LINE_CHANNEL_SECRET=DISTILLER_LINE_CHANNEL_SECRET:latest,LINE_USER_ID=DISTILLER_LINE_USER_ID:latest \
           || gcloud run jobs create diffords-cocktails-scraper \
             --image gcr.io/$PROJECT_ID/diffords-cocktails-scraper:$GITHUB_SHA \
             --region $REGION \
