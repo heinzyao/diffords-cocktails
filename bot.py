@@ -26,6 +26,9 @@ _ = load_dotenv()
 
 LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
 MSG_LIMIT = 4900
+SEARCH_LIMIT_DEFAULT = 5
+LIST_LIMIT_DEFAULT = 10
+RESULT_LIMIT_MAX = 20
 
 GCS_BUCKET = os.getenv("GCS_BUCKET", "")
 GCS_DB_BLOB = os.getenv("GCS_DB_BLOB", GCS_DIFFORDS_DB_BLOB)
@@ -172,7 +175,8 @@ def _open_storage(db_path: str):
     return DiffordsStorage(db_path)
 
 
-def fmt_cocktail_search(db_path: str, keyword: str, limit: int = 5) -> str:
+def fmt_cocktail_search(db_path: str, keyword: str, limit: int = SEARCH_LIMIT_DEFAULT) -> str:
+    limit = max(1, min(limit, RESULT_LIMIT_MAX))
     storage = _open_storage(db_path)
     if storage is None:
         return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
@@ -304,8 +308,9 @@ def fmt_cocktail_list(
     tag: str | None = None,
     min_rating: float | None = None,
     min_abv: float | None = None,
-    limit: int = 10,
+    limit: int = LIST_LIMIT_DEFAULT,
 ) -> str:
+    limit = max(1, min(limit, RESULT_LIMIT_MAX))
     storage = _open_storage(db_path)
     if storage is None:
         return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
@@ -362,14 +367,14 @@ def fmt_help() -> str:
             "🔍 【探索與搜尋】",
             "▪ 說明 / 指令 / Help",
             "  顯示此指令清單",
-            "▪ 雞尾酒搜尋 <關鍵字>",
-            "  搜尋名稱符合關鍵字的雞尾酒",
+            "▪ 雞尾酒搜尋 <關鍵字> [N筆]",
+            f"  搜尋名稱符合關鍵字的雞尾酒（預設 {SEARCH_LIMIT_DEFAULT} 筆，上限 {RESULT_LIMIT_MAX} 筆）",
             "▪ 雞尾酒酒譜 <酒名>",
             "  查詢指定雞尾酒的食材與作法",
             "",
             "📋 【精選與篩選】",
-            "▪ 雞尾酒列表",
-            "  列出社群高分經典雞尾酒",
+            "▪ 雞尾酒列表 [N筆]",
+            f"  列出社群高分經典雞尾酒（預設 {LIST_LIMIT_DEFAULT} 筆，上限 {RESULT_LIMIT_MAX} 筆）",
             "▪ 雞尾酒列表 材料 <材料>",
             "  依特定材料/基酒篩選",
             "▪ 雞尾酒列表 標籤 <標籤>",
@@ -378,6 +383,8 @@ def fmt_help() -> str:
             "  篩選社群高評分的酒譜",
             "▪ 雞尾酒列表 酒精濃度 <最低%>",
             "  篩選酒精濃度高於指定濃度的酒譜",
+            "",
+            "💡 任一查詢皆可在句尾加「N筆」指定顯示筆數，例如「雞尾酒列表 材料 gin 15筆」",
             "",
             "📊 【系統與爬蟲】",
             "▪ 雞尾酒統計",
@@ -390,8 +397,22 @@ def fmt_help() -> str:
     )
 
 
+_LIMIT_RE = re.compile(r"\s+(\d+)\s*筆$")
+
+
+def _split_limit(text: str) -> tuple[str, int | None]:
+    """切出指令尾端的「N筆」；未指定回傳 None。
+
+    用「筆」當單位而非裸數字，是因為 158 款酒名本身以數字結尾（No. 2、Apollo 8）。
+    """
+    match = _LIMIT_RE.search(text)
+    if not match:
+        return text, None
+    return text[: match.start()].strip(), int(match.group(1))
+
+
 def parse_command(text: str) -> tuple[str, list[Any]]:
-    text = text.strip()
+    text, limit = _split_limit(text.strip())
     lower = text.lower()
     if lower in ("help", "說明", "指令"):
         return "help", []
@@ -406,26 +427,27 @@ def parse_command(text: str) -> tuple[str, list[Any]]:
 
     match = re.match(r"^(?:雞尾酒搜尋|cocktail search|search)\s+(.+)$", text, re.I)
     if match:
-        return "search", [match.group(1).strip()]
+        return "search", [match.group(1).strip(), limit or SEARCH_LIMIT_DEFAULT]
 
     match = re.match(r"^(?:雞尾酒酒譜|雞尾酒詳情|recipe|info)\s+(.+)$", text, re.I)
     if match:
         return "info", [match.group(1).strip()]
 
+    extra = {"limit": limit} if limit else {}
     match = re.match(r"^雞尾酒列表\s+材料\s+(.+)$", text, re.I)
     if match:
-        return "list", [{"ingredient": match.group(1).strip()}]
+        return "list", [{"ingredient": match.group(1).strip(), **extra}]
     match = re.match(r"^雞尾酒列表\s+標籤\s+(.+)$", text, re.I)
     if match:
-        return "list", [{"tag": match.group(1).strip()}]
+        return "list", [{"tag": match.group(1).strip(), **extra}]
     match = re.match(r"^雞尾酒列表\s+評分\s+([\d.]+)$", text, re.I)
     if match:
-        return "list", [{"min_rating": float(match.group(1))}]
+        return "list", [{"min_rating": float(match.group(1)), **extra}]
     match = re.match(r"^雞尾酒列表\s+(?:酒精濃度|abv)\s+([\d.]+)\s*%?$", text, re.I)
     if match:
-        return "list", [{"min_abv": float(match.group(1))}]
+        return "list", [{"min_abv": float(match.group(1)), **extra}]
     if lower in ("雞尾酒列表", "cocktail list", "list"):
-        return "list", [{}]
+        return "list", [extra]
 
     return "unknown", [text]
 
@@ -439,7 +461,7 @@ def handle_message(text: str, db_path: str = DB_DEFAULT) -> str:
     if command == "stats":
         return fmt_cocktail_stats(db_path)
     if command == "search":
-        return fmt_cocktail_search(db_path, args[0])
+        return fmt_cocktail_search(db_path, args[0], args[1])
     if command == "info":
         return fmt_cocktail_info(db_path, args[0])
     if command == "list":

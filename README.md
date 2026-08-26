@@ -82,14 +82,17 @@ Supported message commands:
 
 | Command | Description |
 |---|---|
-| `雞尾酒搜尋 <keyword>` | Search cocktails by name |
+| `雞尾酒搜尋 <keyword> [N筆]` | Search cocktails by name (default 5, max 20) |
 | `雞尾酒酒譜 <name>` | Show ingredients and instructions |
 | `雞尾酒詳情 <name>` | Alias for full recipe lookup |
-| `雞尾酒列表` | Show top-rated recipes |
+| `雞尾酒列表 [N筆]` | Show top-rated recipes (default 10, max 20) |
 | `雞尾酒列表 材料 <ingredient>` | Filter by ingredient |
 | `雞尾酒列表 標籤 <tag>` | Filter by tag |
 | `雞尾酒列表 評分 <rating>` | Filter by minimum rating |
 | `雞尾酒列表 酒精濃度 <abv>` | Filter by minimum ABV |
+
+Any query accepts a trailing `N筆` to set the result count, e.g. `雞尾酒列表 材料 gin 15筆`.
+
 | `雞尾酒統計` | Show database stats |
 | `雞尾酒爬蟲 <test\|incremental\|full>` | Trigger scraper |
 | `狀態` | Show scraper status |
@@ -164,14 +167,17 @@ uv run python query.py list --rating 4.5
 
 | 指令 | 說明 |
 |---|---|
-| `雞尾酒搜尋 <關鍵字>` | 搜尋雞尾酒名稱 |
+| `雞尾酒搜尋 <關鍵字> [N筆]` | 搜尋雞尾酒名稱（預設 5 筆，上限 20 筆）|
 | `雞尾酒酒譜 <名稱>` | 顯示食材與作法 |
 | `雞尾酒詳情 <名稱>` | 顯示完整酒譜 |
-| `雞尾酒列表` | 顯示高評分酒譜 |
+| `雞尾酒列表 [N筆]` | 顯示高評分酒譜（預設 10 筆，上限 20 筆）|
 | `雞尾酒列表 材料 <材料>` | 依材料篩選 |
 | `雞尾酒列表 標籤 <標籤>` | 依標籤篩選 |
 | `雞尾酒列表 評分 <最低分>` | 依評分篩選 |
 | `雞尾酒列表 酒精濃度 <最低百分比>` | 依酒精濃度篩選 |
+
+任一查詢皆可在句尾加「N筆」指定顯示筆數，例如 `雞尾酒列表 材料 gin 15筆`。
+
 | `雞尾酒統計` | 顯示資料庫摘要 |
 | `雞尾酒爬蟲 <test\|incremental\|full>` | 啟動爬蟲 |
 | `狀態` | 查看爬蟲狀態 |

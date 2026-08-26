@@ -7,12 +7,24 @@ from tests.unit.test_diffords import _sample_cocktail
 
 def test_parse_cocktail_commands():
     assert bot.parse_command("雞尾酒統計") == ("stats", [])
-    assert bot.parse_command("雞尾酒搜尋 negroni") == ("search", ["negroni"])
+    assert bot.parse_command("雞尾酒搜尋 negroni") == ("search", ["negroni", 5])
+    assert bot.parse_command("雞尾酒搜尋 negroni 12筆") == ("search", ["negroni", 12])
+    # 酒名以數字結尾時不該被當成筆數
+    assert bot.parse_command("雞尾酒搜尋 Apollo 8") == ("search", ["Apollo 8", 5])
     assert bot.parse_command("雞尾酒酒譜 Negroni") == ("info", ["Negroni"])
     assert bot.parse_command("雞尾酒列表 材料 gin") == ("list", [{"ingredient": "gin"}])
     assert bot.parse_command("雞尾酒列表 評分 4.5") == ("list", [{"min_rating": 4.5}])
     assert bot.parse_command("雞尾酒列表 酒精濃度 15") == ("list", [{"min_abv": 15.0}])
     assert bot.parse_command("雞尾酒列表 abv 15%") == ("list", [{"min_abv": 15.0}])
+    assert bot.parse_command("雞尾酒列表 15筆") == ("list", [{"limit": 15}])
+    assert bot.parse_command("雞尾酒列表 材料 gin 15筆") == (
+        "list",
+        [{"ingredient": "gin", "limit": 15}],
+    )
+    assert bot.parse_command("雞尾酒列表 評分 4.5 3筆") == (
+        "list",
+        [{"min_rating": 4.5, "limit": 3}],
+    )
     assert bot.parse_command("雞尾酒爬蟲 incremental") == ("scrape", ["incremental"])
 
 
