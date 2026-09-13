@@ -18,7 +18,10 @@
 - `min_count` 預設必須是 `None`。設成 `5` 會讓 994 筆 `rating_count < 5 或 NULL` 的資料從材料／標籤／ABV 查詢中無聲消失
 - 材料條件必須同時比對 `ci.item` 與 `ci.item_generic`（沿用現行行為）
 - `bot.py` 的 `RESULT_LIMIT_MAX = 20` 上限不動
-- 既有測試 `tests/unit/test_bot.py::test_parse_cocktail_commands` 是向下相容的回歸測試，必須全程保持通過
+- 向下相容的承諾是**使用者輸入的指令字串仍可用**，不是 `parse_command` 的內部回傳形狀不變。
+  `tests/unit/test_bot.py::test_parse_cocktail_commands` 是這個承諾的回歸測試，Task 3 結束時必須通過。
+  其中只有 `search` 的三行（第 10、11、13 行）因回傳改為 kwargs dict 而需要更新斷言；
+  所有 `list` 的斷言（第 15-27 行）與指令字串本身一律不得修改 — 它們一改就失去回歸測試的意義
 
 ---
 
@@ -619,7 +622,21 @@ git commit -m "feat(cli): list 的篩選 flag 改為可疊加並支援自選排�
 
 - [ ] **Step 1: 寫失敗測試**
 
-在 `tests/unit/test_bot.py` 的 `test_parse_cocktail_commands` **之後**新增（既有那個測試一行都別動 — 它就是向下相容的回歸測試）：
+先把 `tests/unit/test_bot.py` 第 10、11、13 行的 `search` 斷言改成新的 kwargs dict 形狀（`search` 的回傳形狀變了，指令字串不變）：
+
+```python
+    assert bot.parse_command("雞尾酒搜尋 negroni") == (
+        "search", [{"keyword": "negroni", "limit": 5}])
+    assert bot.parse_command("雞尾酒搜尋 negroni 12筆") == (
+        "search", [{"keyword": "negroni", "limit": 12}])
+    # 酒名以數字結尾時不該被當成筆數
+    assert bot.parse_command("雞尾酒搜尋 Apollo 8") == (
+        "search", [{"keyword": "Apollo 8", "limit": 5}])
+```
+
+`test_parse_cocktail_commands` 的其餘每一行（尤其第 15-27 行所有 `list` 斷言）**一個字都不要動** — 它們就是向下相容的回歸測試。
+
+然後在 `test_parse_cocktail_commands` **之後**新增：
 
 ```python
 def test_parse_combined_conditions():
