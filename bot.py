@@ -196,11 +196,21 @@ def fmt_cocktail_search(
         return f"⚠️ {exc}"
     finally:
         storage.close()
+    # 標題要帶上疊加的條件：只講 keyword 會讓「找不到」看起來像關鍵字打錯，
+    # 但真正篩掉結果的往往是後面那些條件。
+    detail_parts = [_LIST_LABELS[k].format(v) for k, v in active.items() if k in _LIST_LABELS]
+    if sort != "rating" or not desc:
+        detail_parts.append(f"依{_SORT_LABELS[sort]}{'降序' if desc else '升序'}")
+    # 只在真的有東西可講時才加括號：裸搜尋不需要「（依評分降序）」這種預設值贅字
+    detail = f"（{'・'.join(detail_parts)}）" if detail_parts else ""
+
     if not rows:
+        if detail_parts:
+            return f"🔍 找不到符合「{keyword}」{detail}的雞尾酒，請放寬條件或換個關鍵字！"
         return f"🔍 找不到符合「{keyword}」的雞尾酒，請嘗試其他關鍵字！"
 
     lines = [
-        f"🔍 搜尋「{keyword}」的結果：",
+        f"🔍 搜尋「{keyword}」{detail}的結果：",
         "──────────────────"
     ]
     for idx, cocktail in enumerate(rows, 1):
@@ -435,7 +445,9 @@ _NUMERIC_KEYS = {
     "評分": "min_rating",
     "最高評分": "max_rating",
     "酒精濃度": "min_abv",
-    "abv": "min_abv",
+    # 英文鍵 "abv" 已移除：DB 裡有 31 列食材本身就叫 "Rye whiskey 50% abv"，
+    # 貪婪值解析會把 "abv" 誤判成新條件關鍵詞。篩選用途已由「酒精濃度」涵蓋，
+    # 排序仍可用 "abv"（見 _SORT_ALIASES，那邊沒有此衝突，故保留）。
     "最高酒精濃度": "max_abv",
 }
 _SORT_ALIASES = {
@@ -633,7 +645,14 @@ def webhook():
         if not reply_token:
             continue
         text = message.get("text") or ""
-        _reply(reply_token, handle_message(text), token)
+        # 指令文法是自由輸入，解析路徑比舊的固定 regex 寬得多。少了這層保險，
+        # 任何未預期的例外都會炸穿 Flask handler，使用者只會收到沉默。
+        try:
+            reply = handle_message(text)
+        except Exception:
+            logger.exception("handle_message 失敗：%r", text)
+            reply = "⚠️ 處理指令時發生未預期的錯誤，請稍後再試或輸入「說明」查看可用指令。"
+        _reply(reply_token, reply, token)
 
     return "OK", 200
 

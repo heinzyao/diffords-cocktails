@@ -18,7 +18,9 @@ def test_parse_cocktail_commands():
     assert bot.parse_command("雞尾酒列表 材料 gin") == ("list", [{"ingredient": "gin"}])
     assert bot.parse_command("雞尾酒列表 評分 4.5") == ("list", [{"min_rating": 4.5}])
     assert bot.parse_command("雞尾酒列表 酒精濃度 15") == ("list", [{"min_abv": 15.0}])
-    assert bot.parse_command("雞尾酒列表 abv 15%") == ("list", [{"min_abv": 15.0}])
+    # 英文鍵 "abv" 已從 _NUMERIC_KEYS 移除（會與真實食材名衝突，見 bot.py 註解），
+    # 改用中文「酒精濃度」驗證同樣行為；"abv 15%" 現在會被當成未知條件。
+    assert bot.parse_command("雞尾酒列表 酒精濃度 15%") == ("list", [{"min_abv": 15.0}])
     assert bot.parse_command("雞尾酒列表 15筆") == ("list", [{"limit": 15}])
     assert bot.parse_command("雞尾酒列表 材料 gin 15筆") == (
         "list",
@@ -29,6 +31,15 @@ def test_parse_cocktail_commands():
         [{"min_rating": 4.5, "limit": 3}],
     )
     assert bot.parse_command("雞尾酒爬蟲 incremental") == ("scrape", ["incremental"])
+
+
+def test_parse_ingredient_value_containing_the_word_abv():
+    """DB 中真的有食材叫 "Rye whiskey 50% abv"（31 列）；"abv" 移除後
+    不再被誤判成篩選關鍵詞，材料的貪婪值解析會把它整段吃下去。"""
+    assert bot.parse_command("雞尾酒列表 材料 Rye whiskey 50% abv") == (
+        "list",
+        [{"ingredient": "Rye whiskey 50% abv"}],
+    )
 
 
 def test_parse_combined_conditions():
@@ -293,3 +304,29 @@ def test_ensure_db_from_gcs_downloads_missing_db(monkeypatch, tmp_path):
         patch("diffords_guide.gcs_storage.get_blob_updated_time", return_value=None),
     ):
         assert bot._ensure_db_from_gcs(str(db_path), "diffords.db") is True
+
+
+def test_search_title_and_empty_message_mention_filters(tmp_path):
+    """搜尋標題要帶上疊加條件：只講 keyword 會讓「找不到」看起來像關鍵字打錯，
+    但真正篩掉結果的往往是後面那些條件。"""
+    from diffords_guide.storage import DiffordsStorage
+
+    db = tmp_path / "t.db"
+    with DiffordsStorage(str(db)) as st:
+        assert st.save_cocktail({
+            "name": "Negroni",
+            "url": "https://www.diffordsguide.com/cocktails/recipe/1/x",
+            "rating_value": 4.5, "rating_count": 20, "abv": 24.0,
+            "ingredients_html": [{"sort_order": 0, "item": "Gin", "amount": "30ml"}],
+        }) is True
+
+    # 有結果時，標題帶出條件與排序
+    hit = bot.fmt_cocktail_search(str(db), "negroni", ingredient="gin", sort="abv")
+    assert "含有「gin」" in hit
+    assert "依ABV降序" in hit
+    assert "Negroni" in hit
+
+    # 查無結果時也要說明是哪個條件擋掉的，而不是只怪關鍵字
+    miss = bot.fmt_cocktail_search(str(db), "negroni", ingredient="campari")
+    assert "含有「campari」" in miss
+    assert "放寬條件" in miss

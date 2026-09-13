@@ -163,3 +163,38 @@ def test_sort_keys_constant_is_exported():
 def test_results_include_attached_ingredients(storage):
     rows = storage.query_cocktails(keyword="negroni")
     assert sorted(i["item"] for i in rows[0]["ingredients"]) == ["Campari", "Gin"]
+
+
+def test_tied_ratings_rank_by_vote_count_not_id(tmp_path):
+    """同分時票數多的要排前面 —— 這是舊 get_top_rated 的 rating_count DESC 語意。
+
+    真實 DB 有 288 筆並列 5.0、2423 筆並列 4.5，若次要排序只有 c.id（≈字母序），
+    整份「社群高分精選」會由字母決定，11 票的酒會壓過 1530 票的 Negroni。
+    上面那組 5 筆 fixture 同分太少、票數又剛好與 id 同序，測不出這個回歸。
+    """
+    with DiffordsStorage(str(tmp_path / "tied.db")) as st:
+        # 全部同為 5.0 分，票數刻意與 id 反序：只靠 c.id 排序就會拿到相反的結果
+        for cid, name, count in [
+            (1, "Alpha Rare", 3),
+            (2, "Beta Rare", 12),
+            (3, "Gamma Popular", 900),
+            (4, "Delta Popular", 1500),
+        ]:
+            assert st.save_cocktail(_cocktail(cid, name, rating=5.0, count=count)) is True
+
+        names = [r["name"] for r in st.query_cocktails(sort="rating", limit=100)]
+
+    assert names == ["Delta Popular", "Gamma Popular", "Beta Rare", "Alpha Rare"]
+
+
+def test_id_still_breaks_ties_when_vote_counts_match(tmp_path):
+    """票數也並列時才輪到 c.id，確保排序完全確定、不會在多次查詢間跳動。"""
+    with DiffordsStorage(str(tmp_path / "same.db")) as st:
+        for cid, name in [(1, "First"), (2, "Second"), (3, "Third")]:
+            assert st.save_cocktail(_cocktail(cid, name, rating=4.0, count=50)) is True
+
+        first = [r["name"] for r in st.query_cocktails(sort="rating", limit=100)]
+        second = [r["name"] for r in st.query_cocktails(sort="rating", limit=100)]
+
+    assert first == ["First", "Second", "Third"]
+    assert first == second

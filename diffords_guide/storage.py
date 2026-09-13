@@ -351,7 +351,7 @@ class DiffordsStorage:
                 "EXISTS (SELECT 1 FROM json_each(c.tags) t"
                 " WHERE LOWER(t.value) = LOWER(?))"
             )
-            params.append(tag)
+            params.append(tag.strip())
         if min_rating is not None:
             where.append("c.rating_value >= ?")
             params.append(min_rating)
@@ -373,12 +373,14 @@ class DiffordsStorage:
         direction = "DESC" if desc else "ASC"
         params.append(limit)
 
-        # 尾端的 c.id 是 tie-breaker：少了它，同分項目在不同次查詢間會跳動
+        # 兩層 tie-breaker：主排序鍵並列時（例如 288 筆同為 5.0 分），
+        # 先比 c.rating_count（票數多者代表性更高，優先於字母序），
+        # 最後才是 c.id ——純粹保證完全確定性，沒有排序意義。
         rows = self.conn.execute(
             f"""
             SELECT c.* FROM cocktails c
             {clause}
-            ORDER BY {column} {direction} NULLS LAST, c.id
+            ORDER BY {column} {direction} NULLS LAST, c.rating_count DESC, c.id
             LIMIT ?
             """,
             params,
