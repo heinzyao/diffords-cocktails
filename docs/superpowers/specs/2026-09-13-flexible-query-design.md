@@ -58,7 +58,9 @@ def query_cocktails(
 
 - 所有條件可疊加，`None` 者不進 WHERE
 - 標籤：`EXISTS (SELECT 1 FROM json_each(c.tags) t WHERE LOWER(t.value) = LOWER(?))`
-- 材料：`EXISTS (SELECT 1 FROM cocktail_ingredients ci WHERE ci.cocktail_id = c.id AND LOWER(ci.item) LIKE LOWER(?))`
+- 材料：`EXISTS (SELECT 1 FROM cocktail_ingredients ci WHERE ci.cocktail_id = c.id
+  AND (LOWER(ci.item) LIKE LOWER(?) OR LOWER(ci.item_generic) LIKE LOWER(?)))`
+  — 現行 `filter_by_ingredient` 就同時比對 `item` 與 `item_generic`，不可只留 `item`
 - 排序：`ORDER BY {col} {DESC|ASC} NULLS LAST, c.id`
   尾端 `c.id` 是 tie-breaker，否則同分項目在不同次查詢間會跳動
 - `sort` 不在白名單 → 拋 `ValueError`，由呼叫端轉成友善訊息。
