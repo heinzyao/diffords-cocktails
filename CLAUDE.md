@@ -18,7 +18,10 @@ uv run python run_diffords.py --mode incremental  # default; lastmod-based updat
 uv run python run_diffords.py --mode full         # re-scrape everything
 
 uv run python query.py stats
-uv run python query.py list --ingredient gin --rating 4.5   # also --tag, --abv, --limit
+uv run python query.py list --ingredient gin --rating 4.2 --sort abv --limit 15
+# 條件可疊加：--keyword --description --ingredient --tag --rating --max-rating
+#             --abv --max-abv --min-count
+# 排序：--sort {rating,abv,calories,date,name,count} [--asc]
 
 uv run python bot.py                              # LINE bot on PORT (default 8000)
 ```

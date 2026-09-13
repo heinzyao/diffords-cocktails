@@ -103,7 +103,7 @@ def test_storage_saves_and_queries_cocktail(tmp_path):
         assert len(found["ingredients"]) == 3
         assert found["tags"] == ["Classic/vintage", "Bittersweet"]
 
-        by_ingredient = storage.filter_by_ingredient("campari")
+        by_ingredient = storage.query_cocktails(ingredient="campari")
         assert by_ingredient[0]["name"] == "Negroni"
 
         stats = storage.get_stats()

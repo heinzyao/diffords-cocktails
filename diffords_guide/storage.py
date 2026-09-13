@@ -73,6 +73,17 @@ CREATE INDEX IF NOT EXISTS idx_ci_cocktail       ON cocktail_ingredients(cocktai
 CREATE INDEX IF NOT EXISTS idx_ci_item_generic   ON cocktail_ingredients(item_generic);
 """
 
+# 排序鍵白名單。這是唯一會把字串拼進 SQL 的地方，不可改成動態欄位名。
+_SORT_COLUMNS = {
+    "rating": "c.rating_value",
+    "abv": "c.abv",
+    "calories": "c.calories",
+    "date": "c.date_published",
+    "name": "c.name",
+    "count": "c.rating_count",
+}
+SORT_KEYS = tuple(_SORT_COLUMNS)
+
 
 # 欄位轉型輔助
 def _to_real(value) -> Optional[float]:
@@ -289,21 +300,92 @@ class DiffordsStorage:
     # 查詢（供 bot.py 使用）
     # ------------------------------------------------------------------
 
-    def search_cocktails(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+    def query_cocktails(
+        self,
+        *,
+        keyword: Optional[str] = None,
+        description: Optional[str] = None,
+        ingredient: Optional[str] = None,
+        tag: Optional[str] = None,
+        min_rating: Optional[float] = None,
+        max_rating: Optional[float] = None,
+        min_abv: Optional[float] = None,
+        max_abv: Optional[float] = None,
+        min_count: Optional[int] = None,
+        sort: str = "rating",
+        desc: bool = True,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """組合式查詢：所有條件皆可疊加，None 者不進 WHERE。
+
+        min_count 預設 None（不設票數門檻）。設成 5 會讓約 994 筆低票數酒譜
+        從材料／標籤／ABV 查詢中無聲消失，票數門檻屬於「高分精選」語意，
+        應由呼叫端明確傳入。
+        """
+        if sort not in _SORT_COLUMNS:
+            raise ValueError(
+                f"不支援的排序鍵：{sort}（可用：{', '.join(SORT_KEYS)}）"
+            )
+
+        where: list[str] = []
+        params: list[Any] = []
+
+        # ponytail: LIKE 掃描，6946 列夠用；要相關性排序或詞幹處理再換 FTS5
+        if keyword:
+            where.append("LOWER(c.name) LIKE LOWER(?)")
+            params.append(f"%{keyword}%")
+        if description:
+            where.append("LOWER(c.description) LIKE LOWER(?)")
+            params.append(f"%{description}%")
+        if ingredient:
+            where.append(
+                "EXISTS (SELECT 1 FROM cocktail_ingredients ci"
+                " WHERE ci.cocktail_id = c.id"
+                " AND (LOWER(ci.item) LIKE LOWER(?)"
+                "      OR LOWER(ci.item_generic) LIKE LOWER(?)))"
+            )
+            params.extend([f"%{ingredient}%", f"%{ingredient}%"])
+        if tag:
+            # json_each 對 tags IS NULL 會靜默回傳零列，不需額外防護
+            where.append(
+                "EXISTS (SELECT 1 FROM json_each(c.tags) t"
+                " WHERE LOWER(t.value) = LOWER(?))"
+            )
+            params.append(tag.strip())
+        if min_rating is not None:
+            where.append("c.rating_value >= ?")
+            params.append(min_rating)
+        if max_rating is not None:
+            where.append("c.rating_value <= ?")
+            params.append(max_rating)
+        if min_abv is not None:
+            where.append("c.abv >= ?")
+            params.append(min_abv)
+        if max_abv is not None:
+            where.append("c.abv <= ?")
+            params.append(max_abv)
+        if min_count is not None:
+            where.append("c.rating_count >= ?")
+            params.append(min_count)
+
+        clause = f"WHERE {' AND '.join(where)}" if where else ""
+        column = _SORT_COLUMNS[sort]
+        direction = "DESC" if desc else "ASC"
+        params.append(limit)
+
+        # 兩層 tie-breaker：主排序鍵並列時（例如 288 筆同為 5.0 分），
+        # 先比 c.rating_count（票數多者代表性更高，優先於字母序），
+        # 最後才是 c.id ——純粹保證完全確定性，沒有排序意義。
         rows = self.conn.execute(
-            """
-            SELECT c.*,
-                   GROUP_CONCAT(ci.amount || ' ' || ci.item, ', ') AS ingredients_text
-            FROM cocktails c
-            LEFT JOIN cocktail_ingredients ci ON c.id = ci.cocktail_id
-            WHERE LOWER(c.name) LIKE LOWER(?)
-            GROUP BY c.id
-            ORDER BY c.rating_value DESC NULLS LAST
+            f"""
+            SELECT c.* FROM cocktails c
+            {clause}
+            ORDER BY {column} {direction} NULLS LAST, c.rating_count DESC, c.id
             LIMIT ?
-        """,
-            (f"%{query}%", limit),
+            """,
+            params,
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [self._attach_ingredients(dict(r)) for r in rows]
 
     def get_cocktail_by_id(self, cocktail_id: int) -> Optional[dict[str, Any]]:
         row = self.conn.execute(
@@ -327,18 +409,6 @@ class DiffordsStorage:
             return None
         return self._attach_ingredients(dict(row))
 
-    def get_top_rated(self, limit: int = 20) -> list[dict[str, Any]]:
-        rows = self.conn.execute(
-            """
-             SELECT * FROM cocktails
-             WHERE rating_value IS NOT NULL AND rating_count >= 5
-             ORDER BY rating_value DESC, rating_count DESC
-             LIMIT ?
-         """,
-            (limit,),
-        ).fetchall()
-        return [dict(r) for r in rows]
-
     def get_stats(self) -> dict[str, Any]:
         total = self.conn.execute("SELECT COUNT(*) FROM cocktails").fetchone()[0]
         avg_rating = self.conn.execute(
@@ -350,83 +420,6 @@ class DiffordsStorage:
             "平均評分": avg_rating,
             "最後爬取": last_run or "從未",
         }
-
-    def filter_by_ingredient(
-        self, ingredient: str, limit: int = 20
-    ) -> list[dict[str, Any]]:
-        """Search cocktail_ingredients.item OR item_generic LIKE %ingredient%."""
-        rows = self.conn.execute(
-            """
-            SELECT DISTINCT c.*
-            FROM cocktails c
-            JOIN cocktail_ingredients ci ON c.id = ci.cocktail_id
-            WHERE LOWER(ci.item) LIKE LOWER(?)
-               OR LOWER(ci.item_generic) LIKE LOWER(?)
-            ORDER BY c.rating_value DESC NULLS LAST
-            LIMIT ?
-            """,
-            (f"%{ingredient}%", f"%{ingredient}%", limit),
-        ).fetchall()
-        return [self._attach_ingredients(dict(r)) for r in rows]
-
-    def filter_by_tag(self, tag: str, limit: int = 20) -> list[dict[str, Any]]:
-        """Filter cocktails where tags JSON contains the given tag string."""
-        rows = self.conn.execute(
-            "SELECT * FROM cocktails WHERE tags IS NOT NULL"
-        ).fetchall()
-        results: list[dict[str, Any]] = []
-        target = tag.strip().lower()
-        for row in rows:
-            cocktail = dict(row)
-            try:
-                tags = json.loads(cocktail.get("tags") or "[]")
-            except (json.JSONDecodeError, TypeError):
-                continue
-            if any(str(t).lower() == target for t in tags):
-                results.append(self._attach_ingredients(cocktail))
-                if len(results) >= limit:
-                    break
-        return results
-
-    def filter_by_rating(
-        self,
-        min_rating: float = 0.0,
-        max_rating: float = 5.0,
-        min_count: int = 5,
-        limit: int = 20,
-    ) -> list[dict[str, Any]]:
-        """Filter by rating range with minimum vote count."""
-        rows = self.conn.execute(
-            """
-            SELECT * FROM cocktails
-            WHERE rating_value IS NOT NULL
-              AND rating_value BETWEEN ? AND ?
-              AND rating_count >= ?
-            ORDER BY rating_value DESC, rating_count DESC
-            LIMIT ?
-            """,
-            (min_rating, max_rating, min_count, limit),
-        ).fetchall()
-        return [self._attach_ingredients(dict(r)) for r in rows]
-
-    def filter_by_abv(
-        self,
-        min_abv: float = 0.0,
-        max_abv: float = 100.0,
-        limit: int = 20,
-    ) -> list[dict[str, Any]]:
-        """Filter by ABV range."""
-        rows = self.conn.execute(
-            """
-            SELECT * FROM cocktails
-            WHERE abv IS NOT NULL
-              AND abv BETWEEN ? AND ?
-            ORDER BY abv DESC NULLS LAST
-            LIMIT ?
-            """,
-            (min_abv, max_abv, limit),
-        ).fetchall()
-        return [self._attach_ingredients(dict(r)) for r in rows]
 
     def _attach_ingredients(self, cocktail: dict[str, Any]) -> dict[str, Any]:
         ings = self.conn.execute(
