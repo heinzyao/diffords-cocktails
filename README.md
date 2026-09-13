@@ -66,9 +66,9 @@ Options:
 uv run python query.py stats
 uv run python query.py search negroni
 uv run python query.py info "Negroni"
-uv run python query.py list --ingredient gin --limit 10
-uv run python query.py list --tag Classic/vintage
-uv run python query.py list --rating 4.5
+uv run python query.py list --ingredient gin --rating 4.2 --sort abv --limit 15
+uv run python query.py list --tag Classic/vintage --sort calories --asc
+uv run python query.py list --description citrus --sort date
 ```
 
 ### LINE Bot
@@ -88,10 +88,13 @@ Supported message commands:
 | `雞尾酒列表 [N筆]` | Show top-rated recipes (default 10, max 20) |
 | `雞尾酒列表 材料 <ingredient>` | Filter by ingredient |
 | `雞尾酒列表 標籤 <tag>` | Filter by tag |
-| `雞尾酒列表 評分 <rating>` | Filter by minimum rating |
-| `雞尾酒列表 酒精濃度 <abv>` | Filter by minimum ABV |
+| `雞尾酒列表 描述 <keyword>` | Filter by description |
+| `雞尾酒列表 評分 <n>` / `最高評分 <n>` | Rating lower / upper bound |
+| `雞尾酒列表 酒精濃度 <n>` / `最高酒精濃度 <n>` | ABV lower / upper bound |
+| `雞尾酒列表 排序 <key> [升序\|降序]` | Sort by 評分/酒精濃度/卡路里/日期/名稱/評分數 |
 
-Any query accepts a trailing `N筆` to set the result count, e.g. `雞尾酒列表 材料 gin 15筆`.
+Conditions stack freely, e.g. `雞尾酒列表 材料 gin 評分 4.2 排序 酒精濃度 降序 15筆`.
+Any query accepts a trailing `N筆` to set the result count.
 
 | `雞尾酒統計` | Show database stats |
 | `雞尾酒爬蟲 <test\|incremental\|full>` | Trigger scraper |
@@ -159,8 +162,8 @@ uv run python bot.py
 ```bash
 uv run python query.py stats
 uv run python query.py info "Negroni"
-uv run python query.py list --ingredient gin
-uv run python query.py list --rating 4.5
+uv run python query.py list --ingredient gin --rating 4.2 --sort abv
+uv run python query.py list --tag Classic/vintage --sort calories --asc
 ```
 
 ### LINE Bot 指令
@@ -173,10 +176,13 @@ uv run python query.py list --rating 4.5
 | `雞尾酒列表 [N筆]` | 顯示高評分酒譜（預設 10 筆，上限 20 筆）|
 | `雞尾酒列表 材料 <材料>` | 依材料篩選 |
 | `雞尾酒列表 標籤 <標籤>` | 依標籤篩選 |
-| `雞尾酒列表 評分 <最低分>` | 依評分篩選 |
-| `雞尾酒列表 酒精濃度 <最低百分比>` | 依酒精濃度篩選 |
+| `雞尾酒列表 描述 <關鍵字>` | 依描述篩選 |
+| `雞尾酒列表 評分 <n>` / `最高評分 <n>` | 評分下限／上限 |
+| `雞尾酒列表 酒精濃度 <n>` / `最高酒精濃度 <n>` | 酒精濃度下限／上限 |
+| `雞尾酒列表 排序 <依據> [升序\|降序]` | 依 評分／酒精濃度／卡路里／日期／名稱／評分數 排序 |
 
-任一查詢皆可在句尾加「N筆」指定顯示筆數，例如 `雞尾酒列表 材料 gin 15筆`。
+條件可自由疊加，例如 `雞尾酒列表 材料 gin 評分 4.2 排序 酒精濃度 降序 15筆`。
+任一查詢皆可在句尾加「N筆」指定顯示筆數。
 
 | `雞尾酒統計` | 顯示資料庫摘要 |
 | `雞尾酒爬蟲 <test\|incremental\|full>` | 啟動爬蟲 |
