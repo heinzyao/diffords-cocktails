@@ -92,14 +92,13 @@ Supported message commands:
 | `雞尾酒列表 評分 <n>` / `最高評分 <n>` | Rating lower / upper bound |
 | `雞尾酒列表 酒精濃度 <n>` / `最高酒精濃度 <n>` | ABV lower / upper bound |
 | `雞尾酒列表 排序 <key> [升序\|降序]` | Sort by 評分/酒精濃度/卡路里/日期/名稱/評分數 |
-
-Conditions stack freely, e.g. `雞尾酒列表 材料 gin 評分 4.2 排序 酒精濃度 降序 15筆`.
-Any query accepts a trailing `N筆` to set the result count.
-
 | `雞尾酒統計` | Show database stats |
 | `雞尾酒爬蟲 <test\|incremental\|full>` | Trigger scraper |
 | `狀態` | Show scraper status |
 | `說明` | Show help |
+
+Conditions stack freely, e.g. `雞尾酒列表 材料 gin 評分 4.2 排序 酒精濃度 降序 15筆`.
+Any query accepts a trailing `N筆` to set the result count.
 
 ### Data Model
 
@@ -180,14 +179,13 @@ uv run python query.py list --tag Classic/vintage --sort calories --asc
 | `雞尾酒列表 評分 <n>` / `最高評分 <n>` | 評分下限／上限 |
 | `雞尾酒列表 酒精濃度 <n>` / `最高酒精濃度 <n>` | 酒精濃度下限／上限 |
 | `雞尾酒列表 排序 <依據> [升序\|降序]` | 依 評分／酒精濃度／卡路里／日期／名稱／評分數 排序 |
-
-條件可自由疊加，例如 `雞尾酒列表 材料 gin 評分 4.2 排序 酒精濃度 降序 15筆`。
-任一查詢皆可在句尾加「N筆」指定顯示筆數。
-
 | `雞尾酒統計` | 顯示資料庫摘要 |
 | `雞尾酒爬蟲 <test\|incremental\|full>` | 啟動爬蟲 |
 | `狀態` | 查看爬蟲狀態 |
 | `說明` | 顯示指令 |
+
+條件可自由疊加，例如 `雞尾酒列表 材料 gin 評分 4.2 排序 酒精濃度 降序 15筆`。
+任一查詢皆可在句尾加「N筆」指定顯示筆數。
 
 ### 已移除範圍
 

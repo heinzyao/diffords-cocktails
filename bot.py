@@ -182,13 +182,18 @@ def fmt_cocktail_search(
     sort: str = "rating",
     desc: bool = True,
     limit: int = SEARCH_LIMIT_DEFAULT,
+    **filters: Any,
 ) -> str:
+    """搜尋＝「帶名稱關鍵字的列表」：keyword 之外的條件與 fmt_cocktail_list 同規則疊加。"""
     limit = max(1, min(limit, RESULT_LIMIT_MAX))
+    active = {k: v for k, v in filters.items() if v is not None}
     storage = _open_storage(db_path)
     if storage is None:
         return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
     try:
-        rows = storage.query_cocktails(keyword=keyword, sort=sort, desc=desc, limit=limit)
+        rows = storage.query_cocktails(keyword=keyword, sort=sort, desc=desc, limit=limit, **active)
+    except ValueError as exc:
+        return f"⚠️ {exc}"
     finally:
         storage.close()
     if not rows:

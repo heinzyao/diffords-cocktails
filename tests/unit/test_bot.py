@@ -128,6 +128,113 @@ def test_format_cocktail_info(tmp_path):
     assert "STIR all ingredients" in result
 
 
+def test_search_combines_keyword_and_ingredient_filter(tmp_path):
+    """雞尾酒搜尋 negroni 材料 gin：keyword 與 ingredient 需同時套用。"""
+    db = tmp_path / "t.db"
+    with DiffordsStorage(str(db)) as st:
+        assert st.save_cocktail({
+            "name": "Negroni Sbagliato",
+            "url": "https://www.diffordsguide.com/cocktails/recipe/101/negroni-sbagliato",
+            "rating_value": 4.0, "rating_count": 20,
+            "ingredients_html": [{"sort_order": 0, "item": "Prosecco", "amount": "60ml"}],
+        }) is True
+        assert st.save_cocktail({
+            "name": "Classic Negroni",
+            "url": "https://www.diffordsguide.com/cocktails/recipe/102/classic-negroni",
+            "rating_value": 4.5, "rating_count": 30,
+            "ingredients_html": [{"sort_order": 0, "item": "Gin", "amount": "30ml"}],
+        }) is True
+
+    result = bot.handle_message("雞尾酒搜尋 negroni 材料 gin", str(db))
+
+    assert "Classic Negroni" in result
+    assert "Negroni Sbagliato" not in result
+
+
+def test_search_combines_keyword_and_description_filter(tmp_path):
+    """雞尾酒搜尋 negroni 描述 citrus：keyword 與 description 需同時套用。"""
+    db = tmp_path / "t.db"
+    with DiffordsStorage(str(db)) as st:
+        assert st.save_cocktail({
+            "name": "Negroni Twist",
+            "url": "https://www.diffordsguide.com/cocktails/recipe/401/negroni-twist",
+            "description": "A citrus-forward variation.",
+            "rating_value": 4.0, "rating_count": 10,
+            "ingredients_html": [{"sort_order": 0, "item": "Gin", "amount": "30ml"}],
+        }) is True
+        assert st.save_cocktail({
+            "name": "Negroni Bitter",
+            "url": "https://www.diffordsguide.com/cocktails/recipe/402/negroni-bitter",
+            "description": "A bold, bitter classic.",
+            "rating_value": 4.0, "rating_count": 10,
+            "ingredients_html": [{"sort_order": 0, "item": "Gin", "amount": "30ml"}],
+        }) is True
+
+    result = bot.handle_message("雞尾酒搜尋 negroni 描述 citrus", str(db))
+
+    assert "Negroni Twist" in result
+    assert "Negroni Bitter" not in result
+
+
+def test_search_combines_keyword_and_min_rating_filter(tmp_path):
+    """雞尾酒搜尋 negroni 評分 4.0：keyword 與 min_rating 需同時套用。"""
+    db = tmp_path / "t.db"
+    with DiffordsStorage(str(db)) as st:
+        assert st.save_cocktail({
+            "name": "Negroni Low",
+            "url": "https://www.diffordsguide.com/cocktails/recipe/501/negroni-low",
+            "rating_value": 3.0, "rating_count": 10,
+            "ingredients_html": [{"sort_order": 0, "item": "Gin", "amount": "30ml"}],
+        }) is True
+        assert st.save_cocktail({
+            "name": "Negroni High",
+            "url": "https://www.diffordsguide.com/cocktails/recipe/502/negroni-high",
+            "rating_value": 4.8, "rating_count": 10,
+            "ingredients_html": [{"sort_order": 0, "item": "Gin", "amount": "30ml"}],
+        }) is True
+
+    result = bot.handle_message("雞尾酒搜尋 negroni 評分 4.0", str(db))
+
+    assert "Negroni High" in result
+    assert "Negroni Low" not in result
+
+
+def test_search_filter_with_sort_orders_correctly(tmp_path):
+    """雞尾酒搜尋 negroni 材料 gin 排序 酒精濃度 降序：篩選與排序需同時生效。"""
+    db = tmp_path / "t.db"
+    with DiffordsStorage(str(db)) as st:
+        for cid, name, abv in [(201, "Negroni Weak", 10.0), (202, "Negroni Strong", 45.0)]:
+            assert st.save_cocktail({
+                "name": name,
+                "url": f"https://www.diffordsguide.com/cocktails/recipe/{cid}/x",
+                "rating_value": 4.0, "rating_count": 10, "abv": abv,
+                "ingredients_html": [{"sort_order": 0, "item": "Gin", "amount": "30ml"}],
+            }) is True
+
+    result = bot.handle_message("雞尾酒搜尋 negroni 材料 gin 排序 酒精濃度 降序", str(db))
+
+    assert result.index("Negroni Strong") < result.index("Negroni Weak")
+
+
+def test_search_basic_and_sort_by_date_unaffected(tmp_path):
+    """既有搜尋行為（無條件／僅排序）不因 **filters 改動而變化。"""
+    db = tmp_path / "t.db"
+    with DiffordsStorage(str(db)) as st:
+        assert st.save_cocktail({
+            "name": "Negroni",
+            "url": "https://www.diffordsguide.com/cocktails/recipe/301/negroni",
+            "rating_value": 4.5, "rating_count": 100, "date_published": "2020-01-01",
+            "ingredients_html": [{"sort_order": 0, "item": "Gin", "amount": "30ml"}],
+        }) is True
+
+    result = bot.handle_message("雞尾酒搜尋 negroni", str(db))
+    assert "Negroni" in result
+    assert "🔍 搜尋「negroni」的結果：" in result
+
+    result_sorted = bot.handle_message("雞尾酒搜尋 negroni 排序 日期", str(db))
+    assert "Negroni" in result_sorted
+
+
 def test_format_cocktail_list_by_abv(tmp_path):
     db_path = tmp_path / "diffords.db"
     with DiffordsStorage(str(db_path)) as storage:
