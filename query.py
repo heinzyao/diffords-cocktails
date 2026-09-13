@@ -9,7 +9,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).parent))
 
 from diffords_guide.config import DIFFORDS_DB_DEFAULT
-from diffords_guide.storage import DiffordsStorage
+from diffords_guide.storage import SORT_KEYS, DiffordsStorage
 
 
 def _truncate(text: str | None, width: int) -> str:
@@ -41,7 +41,9 @@ def _open_storage(db_path: str) -> DiffordsStorage:
 
 def cmd_search(args: argparse.Namespace) -> None:
     with _open_storage(args.db) as storage:
-        rows = storage.search_cocktails(args.keyword, limit=args.limit)
+        rows = storage.query_cocktails(
+            keyword=args.keyword, sort=args.sort, desc=not args.asc, limit=args.limit
+        )
     print(f'\n搜尋 "{args.keyword}"：找到 {len(rows)} 筆\n')
     _print_rows(rows)
 
@@ -106,22 +108,39 @@ def cmd_stats(args: argparse.Namespace) -> None:
 
 
 def cmd_list(args: argparse.Namespace) -> None:
+    filters = {
+        "keyword": args.keyword,
+        "description": args.description,
+        "ingredient": args.ingredient,
+        "tag": args.tag,
+        "min_rating": args.rating,
+        "max_rating": args.max_rating,
+        "min_abv": args.abv,
+        "max_abv": args.max_abv,
+        "min_count": args.min_count,
+    }
+    active = {k: v for k, v in filters.items() if v is not None}
+
+    labels = {
+        "keyword": "名稱含", "description": "描述含", "ingredient": "材料含",
+        "tag": "標籤", "min_rating": "評分 >=", "max_rating": "評分 <=",
+        "min_abv": "ABV >=", "max_abv": "ABV <=", "min_count": "評分數 >=",
+    }
+    parts = [f"{labels[k]} {v}" for k, v in active.items()]
+
+    # 沒下任何條件時沿用舊的「社群高分精選」語意：5 票門檻
+    if not active:
+        active["min_count"] = 5
+        parts = ["社群高分精選"]
+
+    parts.append(f"依 {args.sort} {'升序' if args.asc else '降序'}")
+    title = "、".join(parts)
+
     with _open_storage(args.db) as storage:
-        if args.ingredient:
-            rows = storage.filter_by_ingredient(args.ingredient, limit=args.limit)
-            title = f"含「{args.ingredient}」"
-        elif args.tag:
-            rows = storage.filter_by_tag(args.tag, limit=args.limit)
-            title = f"標籤「{args.tag}」"
-        elif args.rating is not None:
-            rows = storage.filter_by_rating(min_rating=args.rating, limit=args.limit)
-            title = f"評分 >= {args.rating}"
-        elif args.abv is not None:
-            rows = storage.filter_by_abv(min_abv=args.abv, limit=args.limit)
-            title = f"ABV >= {args.abv}"
-        else:
-            rows = storage.get_top_rated(limit=args.limit)
-            title = "評分排序"
+        rows = storage.query_cocktails(
+            **active, sort=args.sort, desc=not args.asc, limit=args.limit
+        )
+
     print(f"\n雞尾酒列表（{title}，顯示 {len(rows)} 筆）\n")
     _print_rows(rows)
 
@@ -134,9 +153,9 @@ def build_parser() -> argparse.ArgumentParser:
   uv run python query.py stats
   uv run python query.py search negroni
   uv run python query.py info "Negroni"
-  uv run python query.py list --ingredient gin --limit 10
-  uv run python query.py list --tag Classic/vintage
-  uv run python query.py list --rating 4.5
+  uv run python query.py list --ingredient gin --rating 4.2 --abv 20 --sort abv --limit 15
+  uv run python query.py list --tag Classic/vintage --sort calories --asc
+  uv run python query.py list --description citrus --sort date
 """,
     )
     parser.add_argument("--db", default=DIFFORDS_DB_DEFAULT, help="SQLite DB 路徑")
@@ -145,6 +164,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_search = sub.add_parser("search", help="搜尋雞尾酒名稱")
     p_search.add_argument("keyword")
     p_search.add_argument("--limit", type=int, default=20)
+    p_search.add_argument("--sort", choices=SORT_KEYS, default="rating")
+    p_search.add_argument("--asc", action="store_true", help="改為升序（預設降序）")
     p_search.set_defaults(func=cmd_search)
 
     p_info = sub.add_parser("info", help="顯示完整酒譜")
@@ -155,10 +176,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_stats.set_defaults(func=cmd_stats)
 
     p_list = sub.add_parser("list", help="列出或篩選雞尾酒")
+    p_list.add_argument("--keyword", help="依名稱關鍵字篩選")
+    p_list.add_argument("--description", help="依描述關鍵字篩選")
     p_list.add_argument("--ingredient", help="依食材篩選")
     p_list.add_argument("--tag", help="依標籤篩選")
     p_list.add_argument("--rating", type=float, help="最低評分")
+    p_list.add_argument("--max-rating", type=float, dest="max_rating", help="最高評分")
     p_list.add_argument("--abv", type=float, help="最低 ABV")
+    p_list.add_argument("--max-abv", type=float, dest="max_abv", help="最高 ABV")
+    p_list.add_argument("--min-count", type=int, dest="min_count", help="最低評分人數")
+    p_list.add_argument("--sort", choices=SORT_KEYS, default="rating")
+    p_list.add_argument("--asc", action="store_true", help="改為升序（預設降序）")
     p_list.add_argument("--limit", type=int, default=20)
     p_list.set_defaults(func=cmd_list)
 
