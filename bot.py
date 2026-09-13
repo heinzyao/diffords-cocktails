@@ -175,13 +175,20 @@ def _open_storage(db_path: str):
     return DiffordsStorage(db_path)
 
 
-def fmt_cocktail_search(db_path: str, keyword: str, limit: int = SEARCH_LIMIT_DEFAULT) -> str:
+def fmt_cocktail_search(
+    db_path: str,
+    keyword: str,
+    *,
+    sort: str = "rating",
+    desc: bool = True,
+    limit: int = SEARCH_LIMIT_DEFAULT,
+) -> str:
     limit = max(1, min(limit, RESULT_LIMIT_MAX))
     storage = _open_storage(db_path)
     if storage is None:
         return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
     try:
-        rows = storage.search_cocktails(keyword, limit=limit)
+        rows = storage.query_cocktails(keyword=keyword, sort=sort, desc=desc, limit=limit)
     finally:
         storage.close()
     if not rows:
@@ -301,35 +308,50 @@ def fmt_cocktail_stats(db_path: str) -> str:
     return "\n".join(lines)
 
 
+_LIST_LABELS = {
+    "keyword": "名稱含「{}」",
+    "description": "描述含「{}」",
+    "ingredient": "含有「{}」",
+    "tag": "標籤「{}」",
+    "min_rating": "評分 ≥ {} ★",
+    "max_rating": "評分 ≤ {} ★",
+    "min_abv": "ABV ≥ {}%",
+    "max_abv": "ABV ≤ {}%",
+    "min_count": "評分數 ≥ {}",
+}
+_SORT_LABELS = {
+    "rating": "評分", "abv": "ABV", "calories": "卡路里",
+    "date": "日期", "name": "名稱", "count": "評分數",
+}
+
+
 def fmt_cocktail_list(
     db_path: str,
     *,
-    ingredient: str | None = None,
-    tag: str | None = None,
-    min_rating: float | None = None,
-    min_abv: float | None = None,
+    sort: str = "rating",
+    desc: bool = True,
     limit: int = LIST_LIMIT_DEFAULT,
+    **filters: Any,
 ) -> str:
     limit = max(1, min(limit, RESULT_LIMIT_MAX))
+    active = {k: v for k, v in filters.items() if v is not None}
+    title_parts = [_LIST_LABELS[k].format(v) for k, v in active.items() if k in _LIST_LABELS]
+
+    # 沒下任何條件時沿用舊的「社群高分精選」語意：5 票門檻
+    if not active:
+        active["min_count"] = 5
+        title_parts = ["社群高分精選"]
+
+    title_parts.append(f"依{_SORT_LABELS[sort]}{'降序' if desc else '升序'}")
+    title = "・".join(title_parts)
+
     storage = _open_storage(db_path)
     if storage is None:
         return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
     try:
-        if ingredient:
-            rows = storage.filter_by_ingredient(ingredient, limit=limit)
-            title = f"含有「{ingredient}」"
-        elif tag:
-            rows = storage.filter_by_tag(tag, limit=limit)
-            title = f"標籤「{tag}」"
-        elif min_rating is not None:
-            rows = storage.filter_by_rating(min_rating=min_rating, limit=limit)
-            title = f"評分 >= {min_rating} ★"
-        elif min_abv is not None:
-            rows = storage.filter_by_abv(min_abv=min_abv, limit=limit)
-            title = f"ABV >= {min_abv}%"
-        else:
-            rows = storage.get_top_rated(limit=limit)
-            title = "社群高分精選"
+        rows = storage.query_cocktails(**active, sort=sort, desc=desc, limit=limit)
+    except ValueError as exc:
+        return f"⚠️ {exc}"
     finally:
         storage.close()
     if not rows:
@@ -375,14 +397,16 @@ def fmt_help() -> str:
             "📋 【精選與篩選】",
             "▪ 雞尾酒列表 [N筆]",
             f"  列出社群高分經典雞尾酒（預設 {LIST_LIMIT_DEFAULT} 筆，上限 {RESULT_LIMIT_MAX} 筆）",
-            "▪ 雞尾酒列表 材料 <材料>",
-            "  依特定材料/基酒篩選",
-            "▪ 雞尾酒列表 標籤 <標籤>",
-            "  依特定風味標籤或風格篩選",
-            "▪ 雞尾酒列表 評分 <最低評分>",
-            "  篩選社群高評分的酒譜",
-            "▪ 雞尾酒列表 酒精濃度 <最低%>",
-            "  篩選酒精濃度高於指定濃度的酒譜",
+            "▪ 條件可自由疊加：",
+            "  材料 <材料>／標籤 <標籤>／描述 <關鍵字>",
+            "  評分 <最低>／最高評分 <最高>",
+            "  酒精濃度 <最低%>／最高酒精濃度 <最高%>",
+            "▪ 排序 <評分|酒精濃度|卡路里|日期|名稱|評分數> [升序|降序]",
+            "  預設依評分降序",
+            "",
+            "  例：雞尾酒列表 材料 gin 評分 4.2 排序 酒精濃度 降序 15筆",
+            "  例：雞尾酒列表 標籤 Classic/vintage 排序 卡路里 升序",
+            "  例：雞尾酒搜尋 negroni 排序 日期",
             "",
             "💡 任一查詢皆可在句尾加「N筆」指定顯示筆數，例如「雞尾酒列表 材料 gin 15筆」",
             "",
@@ -398,6 +422,83 @@ def fmt_help() -> str:
 
 
 _LIMIT_RE = re.compile(r"\s+(\d+)\s*筆$")
+
+# 中文關鍵詞對英文資料（酒名／食材／標籤皆為英文）天然不衝突，
+# 所以貪婪取值是安全的。
+_GREEDY_KEYS = {"材料": "ingredient", "標籤": "tag", "描述": "description"}
+_NUMERIC_KEYS = {
+    "評分": "min_rating",
+    "最高評分": "max_rating",
+    "酒精濃度": "min_abv",
+    "abv": "min_abv",
+    "最高酒精濃度": "max_abv",
+}
+_SORT_ALIASES = {
+    "評分": "rating", "rating": "rating",
+    "酒精濃度": "abv", "abv": "abv",
+    "卡路里": "calories", "calories": "calories",
+    "日期": "date", "date": "date",
+    "名稱": "name", "name": "name",
+    "評分數": "count", "count": "count",
+}
+_FLAG_KEYS = {"升序": False, "降序": True}
+_ALL_KEYS = set(_GREEDY_KEYS) | set(_NUMERIC_KEYS) | {"排序"} | set(_FLAG_KEYS)
+
+
+def _scan_conditions(tokens: list[str]) -> dict[str, Any]:
+    """把 token 串解析成 query_cocktails 的 kwargs。
+
+    值元數（arity）是消歧義的關鍵：
+      材料/標籤/描述 → 貪婪吃到下一個關鍵詞（支援 "dry vermouth"）
+      評分等數值鍵   → 恰好一個 token
+      排序           → 恰好一個 token（否則「排序 酒精濃度」會被當成新條件）
+      升序/降序      → 零個 token
+    解析失敗一律拋 ValueError，由 parse_command 轉成使用者訊息。
+    只放實際出現在指令中的鍵，不塞預設值 — 否則舊指令的相容測試會壞。
+    """
+    out: dict[str, Any] = {}
+    i = 0
+    while i < len(tokens):
+        key = tokens[i].lower()
+        if key in _GREEDY_KEYS:
+            i += 1
+            start = i
+            while i < len(tokens) and tokens[i].lower() not in _ALL_KEYS:
+                i += 1
+            if i == start:
+                raise ValueError(f"「{tokens[start - 1]}」後面缺少值。")
+            out[_GREEDY_KEYS[key]] = " ".join(tokens[start:i])
+        elif key in _NUMERIC_KEYS:
+            if i + 1 >= len(tokens):
+                raise ValueError(f"「{tokens[i]}」後面缺少數值。")
+            raw = tokens[i + 1].rstrip("%")
+            try:
+                out[_NUMERIC_KEYS[key]] = float(raw)
+            except ValueError:
+                raise ValueError(
+                    f"「{tokens[i]}」的值必須是數字，收到「{tokens[i + 1]}」。"
+                ) from None
+            i += 2
+        elif key == "排序":
+            if i + 1 >= len(tokens):
+                raise ValueError("「排序」後面缺少排序依據。")
+            alias = tokens[i + 1].lower()
+            if alias not in _SORT_ALIASES:
+                raise ValueError(
+                    f"「排序」不支援「{tokens[i + 1]}」，可用："
+                    "評分、酒精濃度、卡路里、日期、名稱、評分數。"
+                )
+            out["sort"] = _SORT_ALIASES[alias]
+            i += 2
+        elif key in _FLAG_KEYS:
+            out["desc"] = _FLAG_KEYS[key]
+            i += 1
+        else:
+            raise ValueError(
+                f"不認識的條件：「{tokens[i]}」。可用條件："
+                "材料、標籤、描述、評分、最高評分、酒精濃度、最高酒精濃度、排序、升序、降序。"
+            )
+    return out
 
 
 def _split_limit(text: str) -> tuple[str, int | None]:
@@ -427,27 +528,33 @@ def parse_command(text: str) -> tuple[str, list[Any]]:
 
     match = re.match(r"^(?:雞尾酒搜尋|cocktail search|search)\s+(.+)$", text, re.I)
     if match:
-        return "search", [match.group(1).strip(), limit or SEARCH_LIMIT_DEFAULT]
+        tokens = match.group(1).split()
+        head = 0
+        while head < len(tokens) and tokens[head].lower() not in _ALL_KEYS:
+            head += 1
+        if head == 0:
+            return "error", ["🔍 「雞尾酒搜尋」後面需要關鍵字，例如「雞尾酒搜尋 negroni」。"]
+        try:
+            args = _scan_conditions(tokens[head:])
+        except ValueError as exc:
+            return "error", [f"⚠️ {exc}"]
+        args["keyword"] = " ".join(tokens[:head])
+        args["limit"] = limit or SEARCH_LIMIT_DEFAULT
+        return "search", [args]
 
     match = re.match(r"^(?:雞尾酒酒譜|雞尾酒詳情|recipe|info)\s+(.+)$", text, re.I)
     if match:
         return "info", [match.group(1).strip()]
 
-    extra = {"limit": limit} if limit else {}
-    match = re.match(r"^雞尾酒列表\s+材料\s+(.+)$", text, re.I)
+    match = re.match(r"^(?:雞尾酒列表|cocktail list|list)(?:\s+(.*))?$", text, re.I)
     if match:
-        return "list", [{"ingredient": match.group(1).strip(), **extra}]
-    match = re.match(r"^雞尾酒列表\s+標籤\s+(.+)$", text, re.I)
-    if match:
-        return "list", [{"tag": match.group(1).strip(), **extra}]
-    match = re.match(r"^雞尾酒列表\s+評分\s+([\d.]+)$", text, re.I)
-    if match:
-        return "list", [{"min_rating": float(match.group(1)), **extra}]
-    match = re.match(r"^雞尾酒列表\s+(?:酒精濃度|abv)\s+([\d.]+)\s*%?$", text, re.I)
-    if match:
-        return "list", [{"min_abv": float(match.group(1)), **extra}]
-    if lower in ("雞尾酒列表", "cocktail list", "list"):
-        return "list", [extra]
+        try:
+            args = _scan_conditions((match.group(1) or "").split())
+        except ValueError as exc:
+            return "error", [f"⚠️ {exc}"]
+        if limit:
+            args["limit"] = limit
+        return "list", [args]
 
     return "unknown", [text]
 
@@ -460,8 +567,10 @@ def handle_message(text: str, db_path: str = DB_DEFAULT) -> str:
         return fmt_status()
     if command == "stats":
         return fmt_cocktail_stats(db_path)
+    if command == "error":
+        return args[0]
     if command == "search":
-        return fmt_cocktail_search(db_path, args[0], args[1])
+        return fmt_cocktail_search(db_path, **args[0])
     if command == "info":
         return fmt_cocktail_info(db_path, args[0])
     if command == "list":

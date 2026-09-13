@@ -7,10 +7,13 @@ from tests.unit.test_diffords import _sample_cocktail
 
 def test_parse_cocktail_commands():
     assert bot.parse_command("雞尾酒統計") == ("stats", [])
-    assert bot.parse_command("雞尾酒搜尋 negroni") == ("search", ["negroni", 5])
-    assert bot.parse_command("雞尾酒搜尋 negroni 12筆") == ("search", ["negroni", 12])
+    assert bot.parse_command("雞尾酒搜尋 negroni") == (
+        "search", [{"keyword": "negroni", "limit": 5}])
+    assert bot.parse_command("雞尾酒搜尋 negroni 12筆") == (
+        "search", [{"keyword": "negroni", "limit": 12}])
     # 酒名以數字結尾時不該被當成筆數
-    assert bot.parse_command("雞尾酒搜尋 Apollo 8") == ("search", ["Apollo 8", 5])
+    assert bot.parse_command("雞尾酒搜尋 Apollo 8") == (
+        "search", [{"keyword": "Apollo 8", "limit": 5}])
     assert bot.parse_command("雞尾酒酒譜 Negroni") == ("info", ["Negroni"])
     assert bot.parse_command("雞尾酒列表 材料 gin") == ("list", [{"ingredient": "gin"}])
     assert bot.parse_command("雞尾酒列表 評分 4.5") == ("list", [{"min_rating": 4.5}])
@@ -26,6 +29,91 @@ def test_parse_cocktail_commands():
         [{"min_rating": 4.5, "limit": 3}],
     )
     assert bot.parse_command("雞尾酒爬蟲 incremental") == ("scrape", ["incremental"])
+
+
+def test_parse_combined_conditions():
+    assert bot.parse_command("雞尾酒列表 材料 gin 評分 4.2 酒精濃度 20 排序 abv 降序 15筆") == (
+        "list",
+        [{"ingredient": "gin", "min_rating": 4.2, "min_abv": 20.0,
+          "sort": "abv", "desc": True, "limit": 15}],
+    )
+
+
+def test_parse_multiword_value():
+    """材料值吃到下一個關鍵詞為止，支援多詞。"""
+    assert bot.parse_command("雞尾酒列表 材料 dry vermouth 描述 citrus") == (
+        "list",
+        [{"ingredient": "dry vermouth", "description": "citrus"}],
+    )
+
+
+def test_parse_sort_value_shadowing_a_filter_keyword():
+    """排序後恰好取一個 token：第二個「酒精濃度」是 sort key 不是篩選條件。"""
+    assert bot.parse_command("雞尾酒列表 酒精濃度 20 排序 酒精濃度") == (
+        "list",
+        [{"min_abv": 20.0, "sort": "abv"}],
+    )
+
+
+def test_parse_ascending_flag():
+    assert bot.parse_command("雞尾酒列表 標籤 Sour 排序 卡路里 升序") == (
+        "list",
+        [{"tag": "Sour", "sort": "calories", "desc": False}],
+    )
+
+
+def test_parse_search_with_sort():
+    assert bot.parse_command("雞尾酒搜尋 negroni 排序 日期") == (
+        "search",
+        [{"keyword": "negroni", "sort": "date", "limit": 5}],
+    )
+
+
+def test_parse_search_without_keyword_is_error():
+    command, args = bot.parse_command("雞尾酒搜尋 排序 abv")
+    assert command == "error"
+    assert "關鍵字" in args[0]
+
+
+def test_parse_unknown_token_reports_error():
+    command, args = bot.parse_command("雞尾酒列表 顏色 紅色")
+    assert command == "error"
+    assert "顏色" in args[0]
+
+
+def test_parse_non_numeric_value_reports_error():
+    command, args = bot.parse_command("雞尾酒列表 評分 高")
+    assert command == "error"
+    assert "評分" in args[0]
+
+
+def test_parse_unknown_sort_key_reports_error():
+    command, args = bot.parse_command("雞尾酒列表 排序 顏色")
+    assert command == "error"
+    assert "排序" in args[0]
+
+
+def test_handle_message_surfaces_parse_error(tmp_path):
+    result = bot.handle_message("雞尾酒列表 顏色 紅色", str(tmp_path / "t.db"))
+    assert "顏色" in result
+
+
+def test_fmt_cocktail_list_combines_and_sorts(tmp_path):
+    from diffords_guide.storage import DiffordsStorage
+
+    db = tmp_path / "t.db"
+    with DiffordsStorage(str(db)) as st:
+        for cid, name, abv in [(1, "Weak Gin", 10.0), (2, "Strong Gin", 45.0)]:
+            assert st.save_cocktail({
+                "name": name,
+                "url": f"https://www.diffordsguide.com/cocktails/recipe/{cid}/x",
+                "rating_value": 4.5, "rating_count": 20, "abv": abv,
+                "ingredients_html": [{"sort_order": 0, "item": "Gin", "amount": "30ml"}],
+            }) is True
+
+    result = bot.fmt_cocktail_list(str(db), ingredient="gin", sort="abv", desc=True)
+    assert result.index("Strong Gin") < result.index("Weak Gin")
+    assert "gin" in result
 
 
 def test_format_cocktail_info(tmp_path):
@@ -48,7 +136,7 @@ def test_format_cocktail_list_by_abv(tmp_path):
     result = bot.fmt_cocktail_list(str(db_path), min_abv=10.0)
 
     assert "Negroni" in result
-    assert "ABV >= 10.0%" in result
+    assert "ABV ≥ 10.0%" in result
 
 
 def test_handle_message_unknown():
