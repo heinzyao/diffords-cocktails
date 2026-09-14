@@ -18,4 +18,9 @@ COPY . .
 # Cloud Run 預設注入 PORT=8080
 EXPOSE 8080
 
-CMD ["uv", "run", "python", "bot.py"]
+# gunicorn 而非 Flask 內建 dev server。
+# --workers 1 是刻意的：_scrape_state／_scrape_lock（擋重複啟動爬蟲）與 _token_cache
+# 都是行程內狀態，多 worker 會各有一份而讓那個鎖失效。要併發就加 threads，
+# 執行緒共享記憶體，鎖仍然有效。
+# 用 sh -c 是為了讓 Cloud Run 注入的 $PORT 展開。
+CMD ["sh", "-c", "uv run gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 8 --timeout 60 --access-logfile - bot:app"]
