@@ -35,6 +35,13 @@ Two deployables, one shared package (`diffords_guide/`) and DB (`diffords.db`):
 
 `Dockerfile.diffords` builds the scraper (Cloud Run Job), `Dockerfile.bot` builds the bot (Cloud Run Service).
 
+The bot runs under gunicorn with **`--workers 1`, deliberately**. `_scrape_state` /
+`_scrape_lock` (the guard against launching a second scrape) and `_token_cache` are
+in-process state — extra workers each get their own copy, which would silently defeat
+the lock and let two scrapers write the same SQLite blob. Scale with `--threads`
+(same process, so the lock still holds), never with `--workers`. Real horizontal
+scaling requires moving that state to shared storage first.
+
 ### Scrape flow (the core logic)
 1. `scraper.parse_sitemap()` reads `SITEMAP_URL` → list of URLs + `lastmod`.
 2. Incremental skip (`_should_skip`): compare sitemap `lastmod` against DB's per-URL `lastmod` map (`storage.get_url_lastmod_map()`). sitemap `lastmod` ≤ DB `lastmod` → skip; no `lastmod` in sitemap → skip conservatively. This is why incremental runs are cheap — don't break the `lastmod` round-trip.
