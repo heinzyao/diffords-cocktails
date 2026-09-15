@@ -185,43 +185,31 @@ def fmt_cocktail_search(
     **filters: Any,
 ) -> str:
     """搜尋＝「帶名稱關鍵字的列表」：keyword 之外的條件與 fmt_cocktail_list 同規則疊加。"""
-    limit = max(1, min(limit, RESULT_LIMIT_MAX))
     active = {k: v for k, v in filters.items() if v is not None}
-    storage = _open_storage(db_path)
-    if storage is None:
-        return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
-    try:
-        rows = storage.query_cocktails(keyword=keyword, sort=sort, desc=desc, limit=limit, **active)
-    except ValueError as exc:
-        return f"⚠️ {exc}"
-    finally:
-        storage.close()
+
     # 標題要帶上疊加的條件：只講 keyword 會讓「找不到」看起來像關鍵字打錯，
     # 但真正篩掉結果的往往是後面那些條件。
-    detail_parts = [_LIST_LABELS[k].format(v) for k, v in active.items() if k in _LIST_LABELS]
+    detail_parts = _condition_labels(active)
     if sort != "rating" or not desc:
-        detail_parts.append(f"依{_SORT_LABELS[sort]}{'降序' if desc else '升序'}")
+        detail_parts.append(_sort_label(sort, desc))
     # 只在真的有東西可講時才加括號：裸搜尋不需要「（依評分降序）」這種預設值贅字
     detail = f"（{'・'.join(detail_parts)}）" if detail_parts else ""
 
-    if not rows:
-        if detail_parts:
-            return f"🔍 找不到符合「{keyword}」{detail}的雞尾酒，請放寬條件或換個關鍵字！"
-        return f"🔍 找不到符合「{keyword}」的雞尾酒，請嘗試其他關鍵字！"
-
-    lines = [
-        f"🔍 搜尋「{keyword}」{detail}的結果：",
-        "──────────────────"
-    ]
-    for idx, cocktail in enumerate(rows, 1):
-        rating = cocktail.get("rating_value")
-        rating_text = f"{rating:.1f} ★" if isinstance(rating, (int, float)) else "N/A"
-        lines.append(f"{idx}. 🌟 {cocktail['name']} ({rating_text})")
-    lines.extend([
-        "──────────────────",
-        "💡 輸入「雞尾酒酒譜 <酒名>」即可查看完整調製步驟！"
-    ])
-    return "\n".join(lines)
+    empty = (
+        f"🔍 找不到符合「{keyword}」{detail}的雞尾酒，請放寬條件或換個關鍵字！"
+        if detail_parts
+        else f"🔍 找不到符合「{keyword}」的雞尾酒，請嘗試其他關鍵字！"
+    )
+    return _query_and_render(
+        db_path,
+        header=f"🔍 搜尋「{keyword}」{detail}的結果：",
+        empty=empty,
+        sort=sort,
+        desc=desc,
+        limit=limit,
+        keyword=keyword,
+        **active,
+    )
 
 
 def fmt_cocktail_info(db_path: str, name: str) -> str:
@@ -340,42 +328,44 @@ _SORT_LABELS = {
 }
 
 
-def fmt_cocktail_list(
+def _condition_labels(active: dict[str, Any]) -> list[str]:
+    return [_LIST_LABELS[k].format(v) for k, v in active.items() if k in _LIST_LABELS]
+
+
+def _sort_label(sort: str, desc: bool) -> str:
+    return f"依{_SORT_LABELS[sort]}{'降序' if desc else '升序'}"
+
+
+def _query_and_render(
     db_path: str,
     *,
-    sort: str = "rating",
-    desc: bool = True,
-    limit: int = LIST_LIMIT_DEFAULT,
-    **filters: Any,
+    header: str,
+    empty: str,
+    sort: str,
+    desc: bool,
+    limit: int,
+    **active: Any,
 ) -> str:
+    """查詢並渲染結果列表 —— 列表與搜尋唯一的查詢入口。
+
+    兩者只有標題與查無結果的措辭不同（由呼叫端組好傳入），其餘流程完全相同。
+    先前兩份各自實作時，搜尋那份漏了 **filters 而讓「雞尾酒搜尋 X 材料 Y」
+    整個炸穿 Flask handler；收斂成單一入口就不會再有那種不同步。
+    """
     limit = max(1, min(limit, RESULT_LIMIT_MAX))
-    active = {k: v for k, v in filters.items() if v is not None}
-    title_parts = [_LIST_LABELS[k].format(v) for k, v in active.items() if k in _LIST_LABELS]
-
-    # 沒下任何條件時沿用舊的「社群高分精選」語意：5 票門檻
-    if not active:
-        active["min_count"] = 5
-        title_parts = ["社群高分精選"]
-
-    title_parts.append(f"依{_SORT_LABELS[sort]}{'降序' if desc else '升序'}")
-    title = "・".join(title_parts)
-
     storage = _open_storage(db_path)
     if storage is None:
         return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
     try:
-        rows = storage.query_cocktails(**active, sort=sort, desc=desc, limit=limit)
+        rows = storage.query_cocktails(sort=sort, desc=desc, limit=limit, **active)
     except ValueError as exc:
         return f"⚠️ {exc}"
     finally:
         storage.close()
     if not rows:
-        return f"🔍 找不到符合「{title}」篩選條件的雞尾酒。"
+        return empty
 
-    lines = [
-        f"📋 雞尾酒列表（{title}）",
-        "──────────────────"
-    ]
+    lines = [header, "──────────────────"]
     for idx, cocktail in enumerate(rows, 1):
         rating = cocktail.get("rating_value")
         rating_text = f"{rating:.1f} ★" if isinstance(rating, (int, float)) else "N/A"
@@ -385,6 +375,36 @@ def fmt_cocktail_list(
         "💡 輸入「雞尾酒酒譜 <酒名>」即可查看完整調製步驟！"
     ])
     return "\n".join(lines)
+
+
+def fmt_cocktail_list(
+    db_path: str,
+    *,
+    sort: str = "rating",
+    desc: bool = True,
+    limit: int = LIST_LIMIT_DEFAULT,
+    **filters: Any,
+) -> str:
+    active = {k: v for k, v in filters.items() if v is not None}
+    title_parts = _condition_labels(active)
+
+    # 沒下任何條件時沿用舊的「社群高分精選」語意：5 票門檻
+    if not active:
+        active["min_count"] = 5
+        title_parts = ["社群高分精選"]
+
+    title_parts.append(_sort_label(sort, desc))
+    title = "・".join(title_parts)
+
+    return _query_and_render(
+        db_path,
+        header=f"📋 雞尾酒列表（{title}）",
+        empty=f"🔍 找不到符合「{title}」篩選條件的雞尾酒。",
+        sort=sort,
+        desc=desc,
+        limit=limit,
+        **active,
+    )
 
 
 def fmt_status() -> str:
