@@ -31,6 +31,14 @@ def _print_rows(rows: list[dict[str, Any]]) -> None:
             print(f"   {desc}")
 
 
+def _positive_int(value: str) -> int:
+    """--limit 的驗證：SQLite 把負數 LIMIT 當成無上限，會靜默印出全部 6955 筆。"""
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"必須是正整數，收到 {value}")
+    return number
+
+
 def _open_storage(db_path: str) -> DiffordsStorage:
     if not Path(db_path).exists():
         print(f"資料庫不存在：{db_path}")
@@ -163,7 +171,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_search = sub.add_parser("search", help="搜尋雞尾酒名稱")
     p_search.add_argument("keyword")
-    p_search.add_argument("--limit", type=int, default=20)
+    p_search.add_argument("--limit", type=_positive_int, default=20)
     p_search.add_argument("--sort", choices=SORT_KEYS, default="rating")
     p_search.add_argument("--asc", action="store_true", help="改為升序（預設降序）")
     p_search.set_defaults(func=cmd_search)
@@ -187,7 +195,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_list.add_argument("--min-count", type=int, dest="min_count", help="最低評分人數")
     p_list.add_argument("--sort", choices=SORT_KEYS, default="rating")
     p_list.add_argument("--asc", action="store_true", help="改為升序（預設降序）")
-    p_list.add_argument("--limit", type=int, default=20)
+    p_list.add_argument("--limit", type=_positive_int, default=20)
     p_list.set_defaults(func=cmd_list)
 
     return parser

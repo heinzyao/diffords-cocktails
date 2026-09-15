@@ -149,3 +149,20 @@ def test_list_applies_min_count_without_filters(capsys, tmp_path):
     out = capsys.readouterr().out
     assert "Popular" in out, "Popular (rating_count >= 5) should be in output"
     assert "Unpopular" not in out, "Unpopular (rating_count < 5) should be filtered out by default min_count=5"
+
+
+def test_limit_rejects_non_positive_values():
+    """SQLite 把負數 LIMIT 當成無上限：--limit -1 會靜默印出全部 6955 筆。"""
+    import pytest as _pytest
+
+    import query
+
+    parser = query.build_parser()
+    for bad in ("-1", "0"):
+        for sub in ("list", "search"):
+            argv = [sub, "--limit", bad] if sub == "list" else [sub, "kw", "--limit", bad]
+            with _pytest.raises(SystemExit):
+                parser.parse_args(argv)
+
+    # 正常值仍可用
+    assert parser.parse_args(["list", "--limit", "15"]).limit == 15
