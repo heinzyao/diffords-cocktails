@@ -38,6 +38,45 @@ SAMPLE_HTML = f"""
 </body></html>
 """
 
+# 2026-08 網站改版後的結構（實測 recipe/1036 取得）：
+#   h3.m-0 標籤全數消失，改為 h2/h3.cocktail-*-heading 且不帶冒號；
+#   食材表改名 cocktail-ingredients__table；
+#   garnish/prepare/history 不再有獨立區塊，garnish 併入 JSON-LD 的 HowToStep。
+SAMPLE_JSON_LD_V2 = {
+    "@context": "https://schema.org",
+    "@type": "Recipe",
+    "name": "Jack Frost #2",
+    "description": "Discover how to make a Jack Frost #2 using Cognac.",
+    "recipeIngredient": ["45 ml Cognac (brandy)", "15 ml Lime juice"],
+    "recipeInstructions": [
+        {"@type": "HowToStep", "name": "Prepare glass", "text": "Select and pre-chill a COUPE GLASS."},
+        {"@type": "HowToStep", "name": "Prepare garnish", "text": "Prepare garnish of sugar rim."},
+        {"@type": "HowToStep", "name": "SHAKE", "text": "SHAKE all ingredients with ice."},
+        {"@type": "HowToStep", "name": "Garnish", "text": "Garnish with lime wedge."},
+    ],
+    "keywords": ["Fruity"],
+    "aggregateRating": {"ratingValue": "4.0", "ratingCount": "12"},
+    "datePublished": "2024-01-01",
+}
+
+SAMPLE_HTML_V2 = f"""
+<html><body>
+<script type="application/ld+json">{json.dumps(SAMPLE_JSON_LD_V2)}</script>
+<h1 class="cocktail-title">Jack Frost #2</h1>
+<h2 class="cocktail-heading">How to make</h2>
+<h3 class="cocktail-sub-heading">Glassware</h3><p>Serve in a Coupe glass</p>
+<h2 class="cocktail-sub-heading">Method</h2>
+<ol><li>Select and pre-chill a COUPE GLASS.</li><li>SHAKE all ingredients with ice.</li></ol>
+<h2 class="cocktail-heading">Review</h2>
+<p>Fruits of the forest and cranberry burst forth from this cognac laced drink.</p>
+<table class="cocktail-ingredients__table"><tbody>
+<tr><td>45 ml</td><td>Remy Martin Cognac</td></tr>
+<tr><td>15 ml</td><td>Lime juice (freshly squeezed)</td></tr>
+</tbody></table>
+<ul><li>12.79% alc./vol. (25.59 proof)</li></ul>
+</body></html>
+"""
+
 SITEMAP_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
@@ -75,6 +114,33 @@ def test_extract_recipe_fields_from_json_ld_and_html():
     assert data["ingredients_html"][1]["item"] == "Campari"
 
 
+def test_extract_handles_2026_08_site_redesign():
+    """改版後的頁面（無 h3.m-0、無 legacy 食材表）仍要取得主要欄位。"""
+    data = DiffordsExtractor.extract_all(SAMPLE_HTML_V2)
+
+    assert data["name"] == "Jack Frost #2"
+    assert data["glassware"] == "Coupe glass"          # 移除 "Serve in a " 前綴
+    assert data["review"].startswith("Fruits of the forest")
+    assert data["abv"] == 12.79
+    assert data["ingredients_html"][0]["item"] == "Remy Martin Cognac"
+    # instructions 改走 JSON-LD 的 HowToStep，與網頁 Method 區塊一致（含 garnish 步驟）
+    assert "SHAKE all ingredients with ice." in data["instructions"]
+    assert "Select and pre-chill a COUPE GLASS." in data["instructions"]
+    # garnish 由 HowToStep 的 garnish 步驟合併而來（可能有多個）
+    assert "sugar rim" in data["garnish"]
+    assert "lime wedge" in data["garnish"]
+
+
+def test_extract_still_handles_pre_redesign_html():
+    """舊結構不可回歸 —— GCS 上仍有大量改版前抓到的資料。"""
+    data = DiffordsExtractor.extract_all(SAMPLE_HTML)
+
+    assert data["glassware"] == "Old Fashioned Glass"
+    assert data["garnish"] == "Orange peel twist"
+    assert data["review"] == "The iconic Italian aperitivo."
+    assert data["history"] == "Created in Florence."
+
+
 def test_html_only_fallback_extracts_name_and_ingredients():
     html = """
     <html><body>
@@ -108,6 +174,30 @@ def test_storage_saves_and_queries_cocktail(tmp_path):
 
         stats = storage.get_stats()
         assert stats["總雞尾酒數"] == 1
+
+
+def test_storage_keeps_existing_html_fields_when_rescrape_returns_none(tmp_path):
+    """改版後抓不到的欄位不可清空既有資料（否則一次 full scrape 就流失）。"""
+    db = tmp_path / "t.db"
+    with DiffordsStorage(str(db)) as storage:
+        storage.save_cocktail({
+            "name": "Negroni", "url": "https://www.diffordsguide.com/cocktails/recipe/1/negroni",
+            "garnish": "Orange peel twist", "prepare": "Chill glass.",
+            "glassware": "Old Fashioned Glass", "abv": 16.14,
+        })
+        # 改版後的重爬：HTML 欄位抓不到，但 JSON-LD 欄位有新值
+        storage.save_cocktail({
+            "name": "Negroni", "url": "https://www.diffordsguide.com/cocktails/recipe/1/negroni",
+            "garnish": None, "prepare": None, "glassware": None, "abv": None,
+            "description": "Updated description.",
+        })
+        row = storage.get_cocktail_by_name("Negroni")
+
+    assert row["garnish"] == "Orange peel twist"
+    assert row["prepare"] == "Chill glass."
+    assert row["glassware"] == "Old Fashioned Glass"
+    assert row["abv"] == 16.14
+    assert row["description"] == "Updated description."  # JSON-LD 欄位仍正常更新
 
 
 def test_storage_upserts_cocktail_when_diffords_slug_changes(tmp_path):

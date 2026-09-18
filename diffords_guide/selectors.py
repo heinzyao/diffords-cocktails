@@ -1,20 +1,31 @@
 """
 Difford's Guide 資料提取工具
 
-資料來源優先順序（已驗證 2026-04-12）：
+資料來源優先順序（已驗證 2026-09-18）：
   1. JSON-LD (schema.org) — 最穩定，覆蓋主要欄位，無需 JavaScript 渲染
-  2. HTML parsing (BeautifulSoup) — 補充玻璃杯、裝飾、歷史、ABV 等欄位
+  2. HTML parsing (BeautifulSoup) — 補充玻璃杯、評語、ABV 等欄位
 
-HTML 結構（實際驗證）：
-  - 玻璃杯：h3.m-0[text="Glass:"] → nextElementSibling.text
-             結果含 "Photographed in a …" 前綴，自動移除
-  - 調製步驟：h3.m-0[text="How to make:"] → nextElementSibling.text
-  - 裝飾：h3.m-0[text="Garnish:"] → nextElementSibling.text
-  - 準備：h3.m-0[text="Prepare:"] → nextElementSibling.text
-  - 評語：h3.m-0[text="Review:"] → nextElementSibling.text
-  - 歷史：h3.m-0[text="History:"] → nextElementSibling.text
-  - 食材：table.legacy-ingredients-table tbody tr → td[0]=amount, td[1]=name
-  - ABV：li 含 "alc./vol." 文字
+網站在 2026-08 中旬改版，提取器同時支援新舊兩種結構（`_heading_next_text`
+接受多個 label，比對時忽略大小寫與尾隨冒號）。
+
+改版後（現行）：
+  - 玻璃杯：h3[text="Glassware"] → 下一個兄弟，含 "Serve in a …" 前綴，自動移除
+  - 調製步驟：JSON-LD recipeInstructions（HowToStep 陣列）優先，
+              HTML fallback 為 h2[text="Method"] → 下一個兄弟
+  - 裝飾：JSON-LD HowToStep 中 name 含 "garnish" 的步驟，可能多個，依序串接
+  - 評語：h2[text="Review"] → 下一個兄弟
+  - 食材：table.cocktail-ingredients__table tbody tr → td[0]=amount, td[1]=name
+  - ABV：li 含 "alc./vol." 文字（頁面資料不足時會顯示說明文字而非數值，此時為 None）
+  - 準備、歷史：**改版後已無對應區塊**，一律為 None
+
+改版前（仍支援，GCS 上多數資料抓於此時期）：
+  - 標籤為 h3.m-0 且帶冒號："Glass:"、"Garnish:"、"Prepare:"、
+    "How to make:"、"Review:"、"History:"
+  - 玻璃杯前綴為 "Photographed in a …"
+  - 食材表為 table.legacy-ingredients-table
+
+因為 prepare / history 在新版必為 None，`storage._upsert_cocktail` 對 HTML
+來源欄位一律使用 COALESCE，避免重爬時把改版前抓到的資料清空。
 
 JSON-LD 欄位對應：
   name, description, recipeIngredient, recipeInstructions,
@@ -64,23 +75,69 @@ class DiffordsExtractor:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _h3_next_text(soup: BeautifulSoup, label: str) -> Optional[str]:
-        """找 h3.m-0[text=label] 後的第一個兄弟元素文字。"""
-        for h3 in soup.find_all("h3", class_="m-0"):
-            if h3.get_text(strip=True) == label:
-                nxt = h3.find_next_sibling()
+    def _heading_next_text(soup: BeautifulSoup, *labels: str) -> Optional[str]:
+        """找標題文字符合任一 label 的 h2/h3，回傳其下一個兄弟元素的文字。
+
+        比對時忽略大小寫與尾隨冒號，且不限定 class —— 2026-08 改版把
+        `<h3 class="m-0">Glass:</h3>` 換成
+        `<h3 class="cocktail-sub-heading">Glassware</h3>`。
+        同時傳新舊兩種 label 即可讓兩種結構都命中。
+        """
+        wanted = {label.rstrip(":").lower() for label in labels}
+        for heading in soup.find_all(["h2", "h3"]):
+            if heading.get_text(strip=True).rstrip(":").lower() in wanted:
+                nxt = heading.find_next_sibling()
                 if nxt:
                     return nxt.get_text(separator=" ", strip=True)
         return None
 
     @staticmethod
+    def _steps(ld: Optional[dict]) -> list[dict]:
+        """取出 JSON-LD 的 HowToStep 清單（非 dict 元素一律略過）。"""
+        raw = (ld or {}).get("recipeInstructions") or []
+        return [st for st in raw if isinstance(st, dict)]
+
+    @staticmethod
     def extract_glassware(soup: BeautifulSoup) -> Optional[str]:
-        """提取玻璃杯類型，移除 'Photographed in a ' 前綴。"""
-        text = DiffordsExtractor._h3_next_text(soup, "Glass:")
+        """提取玻璃杯類型，移除 'Serve in a' / 'Photographed in a' 前綴。"""
+        text = DiffordsExtractor._heading_next_text(soup, "Glassware", "Glass:")
         if not text:
             return None
-        # 移除 "Photographed in a " 常見前綴
-        return re.sub(r"(?i)^photographed\s+in\s+a?\s*", "", text).strip() or text
+        stripped = re.sub(
+            r"(?i)^(?:photographed|serve[d]?)\s+in\s+an?\s*", "", text
+        ).strip()
+        return stripped or text
+
+    @classmethod
+    def extract_instructions(
+        cls, ld: Optional[dict], soup: BeautifulSoup
+    ) -> Optional[str]:
+        """調製步驟。優先用 JSON-LD 的 HowToStep，其次讀 HTML 的 Method 區塊。
+
+        改版後 HTML 的步驟藏在 <ol> 裡，JSON-LD 反而結構更乾淨，故改以它為主。
+        """
+        texts = [
+            st.get("text", "").strip() for st in cls._steps(ld) if st.get("text")
+        ]
+        if texts:
+            return " ".join(texts)
+        return cls._heading_next_text(soup, "Method", "How to make:")
+
+    @classmethod
+    def extract_garnish(cls, ld: Optional[dict], soup: BeautifulSoup) -> Optional[str]:
+        """裝飾。改版後沒有獨立區塊，改由 HowToStep 中與 garnish 相關的步驟合併。
+
+        單一酒譜可能有多個 garnish 步驟（如 'Prepare garnish' 兩次加一次
+        'Garnish'），全部保留並依原順序串接。
+        """
+        texts = [
+            st.get("text", "").strip()
+            for st in cls._steps(ld)
+            if "garnish" in (st.get("name") or "").lower() and st.get("text")
+        ]
+        if texts:
+            return " ".join(texts)
+        return cls._heading_next_text(soup, "Garnish:")
 
     @staticmethod
     def extract_ingredients_html(soup: BeautifulSoup) -> list[dict]:
@@ -91,7 +148,11 @@ class DiffordsExtractor:
               <tbody>
                 <tr><td>45 ml</td><td>Strucchi Red Bitter...</td></tr>
         """
-        table = soup.find("table", class_="legacy-ingredients-table")
+        # cocktail-ingredients__table 是 2026-08 改版後的新 class，
+        # legacy-ingredients-table 保留給改版前的頁面。
+        table = soup.find(
+            "table", class_=["cocktail-ingredients__table", "legacy-ingredients-table"]
+        )
         if not table:
             return []
         rows = []
@@ -193,11 +254,11 @@ class DiffordsExtractor:
             "date_published":     None,
             # ── HTML 欄位（正常提取）──
             "glassware":          cls.extract_glassware(soup),
-            "garnish":            cls._h3_next_text(soup, "Garnish:"),
-            "prepare":            cls._h3_next_text(soup, "Prepare:"),
-            "instructions":       cls._h3_next_text(soup, "How to make:"),
-            "review":             cls._h3_next_text(soup, "Review:"),
-            "history":            cls._h3_next_text(soup, "History:"),
+            "garnish":            cls.extract_garnish(None, soup),
+            "prepare":            cls._heading_next_text(soup, "Prepare:"),
+            "instructions":       cls.extract_instructions(None, soup),
+            "review":             cls._heading_next_text(soup, "Review"),
+            "history":            cls._heading_next_text(soup, "History:"),
             "abv":                cls.extract_abv(soup),
             # ── 食材（僅 HTML 來源，無通用名稱）──
             "ingredients_generic": [],
@@ -231,11 +292,11 @@ class DiffordsExtractor:
             "date_published":     ld.get("datePublished"),
             # ── HTML 欄位 ──
             "glassware":          cls.extract_glassware(soup),
-            "garnish":            cls._h3_next_text(soup, "Garnish:"),
-            "prepare":            cls._h3_next_text(soup, "Prepare:"),
-            "instructions":       cls._h3_next_text(soup, "How to make:"),
-            "review":             cls._h3_next_text(soup, "Review:"),
-            "history":            cls._h3_next_text(soup, "History:"),
+            "garnish":            cls.extract_garnish(ld, soup),
+            "prepare":            cls._heading_next_text(soup, "Prepare:"),
+            "instructions":       cls.extract_instructions(ld, soup),
+            "review":             cls._heading_next_text(soup, "Review"),
+            "history":            cls._heading_next_text(soup, "History:"),
             "abv":                cls.extract_abv(soup),
             # ── 食材（雙來源）──
             # ingredients_generic：JSON-LD 通用名稱，供查詢與資料分析使用

@@ -159,6 +159,13 @@ class DiffordsStorage:
             return False
 
     def _upsert_cocktail(self, cur: sqlite3.Cursor, data: dict[str, Any]) -> int:
+        """寫入單筆酒譜。
+
+        HTML 來源的欄位用 COALESCE 保護：抓不到（None）時保留既有值，不清空。
+        2026-08 網站改版移除了 prepare/history 區塊，若直接覆寫，一次 full
+        scrape 就會清掉 4,645 筆改版前抓到的 prepare。JSON-LD 來源的欄位
+        （description/tags/rating…）穩定有值，維持直接覆寫以便更新。
+        """
         row = self._prepare_row(data)
         existing = cur.execute(
             "SELECT id FROM cocktails WHERE id = ?", (row["id"],)
@@ -170,10 +177,15 @@ class DiffordsStorage:
                 """
                 UPDATE cocktails SET
                     name=:name, slug=:slug, description=:description,
-                    glassware=:glassware, garnish=:garnish, prepare=:prepare,
-                    instructions=:instructions, review=:review, history=:history,
+                    glassware=COALESCE(:glassware, glassware),
+                    garnish=COALESCE(:garnish, garnish),
+                    prepare=COALESCE(:prepare, prepare),
+                    instructions=COALESCE(:instructions, instructions),
+                    review=COALESCE(:review, review),
+                    history=COALESCE(:history, history),
+                    abv=COALESCE(:abv, abv),
                     tags=:tags, rating_value=:rating_value, rating_count=:rating_count,
-                    calories=:calories, prep_time_min=:prep_time_min, abv=:abv,
+                    calories=:calories, prep_time_min=:prep_time_min,
                     date_published=:date_published, url=:url, lastmod=:lastmod,
                     scraped_at=CURRENT_TIMESTAMP
                 WHERE id=:id
