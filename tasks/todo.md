@@ -66,11 +66,17 @@ desc|6684  review|0  history|0  instr|4645  tags|6684  garnish|4515
 - [x] `garnish` 改由 JSON-LD `HowToStep` 中 name 含 garnish 的步驟合併
 - [x] 食材表同時吃 `cocktail-ingredients__table` 與 `legacy-ingredients-table`
 - [x] `storage._upsert_cocktail` 對 HTML 欄位加 COALESCE（見下方風險說明）
-- [x] 驗證 `History` 是否還存在 → **改版後已無此區塊**，`prepare` 同樣消失
 - [x] 單元測試釘住新舊兩種結構 + COALESCE 保護行為（72 passed）
 - [x] `--mode test` 冒煙：新增 9 筆，9/9 都有 review / glassware / garnish
-- [ ] 跑 `--mode full` 回填（6,955 頁 × 2-4s ≈ 6 小時）
-- [ ] 回填後統計 `count(review)`，決定階段 2 做不做
+- [x] 跑 `--mode full` 回填 —— 2026-09-19 04:03→11:04，6,955 筆全數重爬，**失敗 0**
+- [x] 回填後統計 `count(review)` → **6,738 筆**，階段 2 的素材成立
+
+> **訂正**：實作當下只抽驗 3 頁就斷定「`History` / `Prepare` 區塊已從網站移除」，
+> 這是錯的。回填後 `history` 有 5,901 筆、`prepare` 有 4,992 筆。
+> 真相是**新版頁面版型不只一種** —— 有的酒款用 `Glassware`、有的用 `Glass`，
+> `Prepare` / `Garnish` / `History` 也只有部分酒款具備。我最初抽驗的三頁
+> 剛好都是精簡版型。實作本身沒問題（`rstrip(":")` 讓無冒號標題照樣命中），
+> 錯的是據此寫下的結論。抽樣結論要標明樣本數。
 
 `--mode full` 會重爬全站，別在週日 04:00 的 launchd 排程前後跑，避免兩個寫入者
 同時動 GCS 上的 `diffords.db`（同 `CLAUDE.md` 的排程說明）。
@@ -86,7 +92,35 @@ desc|6684  review|0  history|0  instr|4645  tags|6684  garnish|4515
 | `legacy-ingredients-table` | 不存在（改名 `cocktail-ingredients__table`） | class 清單同時吃兩種 |
 | JSON-LD | 完整，且含 `recipeInstructions` | 反而升為 instructions / garnish 的主來源 |
 | ABV `li` | 正常 | 不動 |
-| `prepare` / `history` 區塊 | **已從網站移除** | 一律 None，靠 COALESCE 保住舊值 |
+| `prepare` / `history` 區塊 | 僅部分版型具備（見上方訂正） | label 去冒號比對，抓不到時靠 COALESCE 保住舊值 |
+| `Flavour Profile` 區塊 | 新增，尚未提取 | 見下方「後續機會」 |
+
+#### 回填結果（2026-09-19）
+
+| 欄位 | 回填前 | 回填後 | 變化 |
+|---|---:|---:|---|
+| review 評語 | 0 | 6,738 | **+6,738** |
+| history 歷史 | 0 | 5,901 | **+5,901** |
+| instructions 作法 | 4,645 | 6,953 | +2,308 |
+| garnish 裝飾 | 4,515 | 5,654 | +1,139 |
+| glassware 杯型 | 6,601 | 6,952 | +351 |
+| prepare 準備 | 4,645 | 4,992 | +347 |
+| abv | 5,882 | 5,884 | +2 |
+| description 描述 | 6,684 | 6,679 | **−5** |
+
+食材品牌名同步恢復：32,522 列 / 1,179 種品牌名 / 1,044 種通用名。
+
+`description` 少 5 筆是預期行為 —— 它來自 JSON-LD，不受 COALESCE 保護（需要能
+更新），那 5 頁現在沒有 description 就被清成 NULL。量小且來源穩定，不處理。
+
+#### 後續機會：Flavour Profile
+
+改版新增了 `h2[text="Flavour Profile"]` 區塊，內容是口味維度的滑桿標籤，
+例如 `No alcohol | Medium Boozy | Sweet | Medium Dry/sour`。
+
+這是**結構化資料而非散文**，所以對階段 2 的向量檢索幫助不大，但對階段 1 的
+NL→查詢參數很有價值 —— 「幫我找不太甜的」目前無法對應到任何欄位，有了口味
+維度就能變成一個 SQL 可篩的條件。做階段 1 時一併評估。
 
 **差點造成資料流失**：`_upsert_cocktail` 原本無條件覆寫所有欄位。新版 `prepare`
 必為 None，若照原樣跑一次 `--mode full`，會把 4,645 筆改版前抓到的 prepare
@@ -141,7 +175,12 @@ fmt_cocktail_list(db_path, **args)   ← 既有函式，不動
 
 ### 階段 2：風味語意檢索（條件性）
 
-**只有階段 0 成功回填 `review` 才啟動。** 屆時素材約 6,955 × ~90 字元 ≈ 600 KB。
+**啟動條件已達成** —— 階段 0 回填出 6,738 筆 `review`，內容確實是風味描述
+（如 Paper Plane：「Bittersweet with underlying bourbon character and lemon zest」），
+不再是 `description` 那種模板文字。素材約 600 KB。
+
+但仍建議**排在階段 1 之後**：階段 1 的 NL→查詢參數能解決大部分實際查詢，
+而階段 2 會讓 DB 膨脹三倍（見下），先確認前者不夠用再做。
 
 - [ ] embedding 存 SQLite BLOB，查詢時 numpy 暴力算 cosine
       —— 6,955 × 768 維全表掃描 <50ms，不需要向量資料庫 / FAISS / pgvector

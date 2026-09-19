@@ -8,15 +8,25 @@ Difford's Guide 資料提取工具
 網站在 2026-08 中旬改版，提取器同時支援新舊兩種結構（`_heading_next_text`
 接受多個 label，比對時忽略大小寫與尾隨冒號）。
 
-改版後（現行）：
-  - 玻璃杯：h3[text="Glassware"] → 下一個兄弟，含 "Serve in a …" 前綴，自動移除
+改版後（現行）。**版型不只一種** —— 不同酒款的頁面區塊組合不同，
+例如有的用 h3[text="Glassware"]、有的用 h3[text="Glass"]，Prepare /
+Garnish / History 也只有部分酒款具備。因此 label 一律同時傳新舊兩種，
+並靠 rstrip(":") 讓「有無冒號」兩種寫法都命中：
+  - 玻璃杯：h3[text="Glassware"] 或 h3[text="Glass"] → 下一個兄弟，
+            前綴 "Serve in a …" / "Photographed in a …" 自動移除
   - 調製步驟：JSON-LD recipeInstructions（HowToStep 陣列）優先，
-              HTML fallback 為 h2[text="Method"] → 下一個兄弟
-  - 裝飾：JSON-LD HowToStep 中 name 含 "garnish" 的步驟，可能多個，依序串接
+              HTML fallback 為 h3[text="Method"] → 下一個兄弟
+  - 裝飾：JSON-LD HowToStep 中 name 含 "garnish" 的步驟，可能多個，依序串接；
+          無 HowToStep 時 fallback 到 h3[text="Garnish"]
   - 評語：h2[text="Review"] → 下一個兄弟
+  - 歷史：h2[text="History"] → 下一個兄弟（約 85% 的酒款有）
+  - 準備：h3[text="Prepare"] → 下一個兄弟（約 72% 的酒款有）
   - 食材：table.cocktail-ingredients__table tbody tr → td[0]=amount, td[1]=name
   - ABV：li 含 "alc./vol." 文字（頁面資料不足時會顯示說明文字而非數值，此時為 None）
-  - 準備、歷史：**改版後已無對應區塊**，一律為 None
+
+尚未提取的新區塊：h2[text="Flavour Profile"]，內容是口味維度的滑桿標籤
+（如 "No alcohol Medium Boozy Sweet Medium Dry/sour"）。屬結構化資料而非
+散文，若要支援「不太甜的酒」這類查詢再考慮加。
 
 改版前（仍支援，GCS 上多數資料抓於此時期）：
   - 標籤為 h3.m-0 且帶冒號："Glass:"、"Garnish:"、"Prepare:"、
@@ -24,8 +34,8 @@ Difford's Guide 資料提取工具
   - 玻璃杯前綴為 "Photographed in a …"
   - 食材表為 table.legacy-ingredients-table
 
-因為 prepare / history 在新版必為 None，`storage._upsert_cocktail` 對 HTML
-來源欄位一律使用 COALESCE，避免重爬時把改版前抓到的資料清空。
+因為同一欄位在部分酒款的頁面上不存在（抓到 None），`storage._upsert_cocktail`
+對 HTML 來源欄位一律使用 COALESCE，避免重爬時把先前抓到的資料清空。
 
 JSON-LD 欄位對應：
   name, description, recipeIngredient, recipeInstructions,
