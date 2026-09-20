@@ -85,6 +85,10 @@ Two Cloud Run resources, one bucket:
 
 **Scheduled scraping runs on the local Mac, not in the cloud.** `~/Library/LaunchAgents/com.distiller.diffords.plist`
 runs `scripts/run_diffords.sh` every Sunday at 04:00, which writes to `diffords-cocktails-data`.
+That script passes `--build-index`, so the flavour vectors for newly scraped recipes are
+rebuilt **before** the GCS upload — one upload, and the online DB never has recipes the
+semantic search can't find. A failed index blocks the upload rather than shipping a
+half-indexed DB.
 This is deliberate — Cloud Scheduler was tried and removed (2026-09-08). Don't add cloud
 scheduling back without deciding what to do about the local job first; running both would
 have two writers on one SQLite blob.

@@ -243,11 +243,15 @@ API 形狀不同（`genai.Client()` / `client.models.generate_content()`），
 
 #### 維運
 
-重爬後要重建索引（review 變動的才會重算）：
+每週日的 launchd 排程已帶 `--build-index`，會在 GCS 上傳**之前**補上新酒譜的
+向量（只重算 review 有變動的，平時是 0 筆），所以一般情況不需要手動處理。
+索引建立失敗時會擋下上傳，寧可保留舊 DB 也不要讓線上出現查不到風味的酒譜。
+
+手動重建（例如改了 embedding 模型或維度）：
 
 ```bash
-uv run python query.py index      # 約 68 批、5 分鐘
-# 然後上傳 GCS，否則線上 bot 拿不到索引
+uv run python query.py index --rebuild   # 全部重算，約 68 批、5 分鐘
+# 手動跑的話記得上傳 GCS，否則線上 bot 拿不到索引
 ```
 
 - [ ] embedding 存 SQLite BLOB，查詢時 numpy 暴力算 cosine

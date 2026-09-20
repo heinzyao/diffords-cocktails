@@ -7,14 +7,16 @@ Difford's Guide 雞尾酒譜爬蟲執行腳本
     python run_diffords.py --mode full           # 全量爬取（首次或強制重爬）
     python run_diffords.py --mode test           # 測試（僅爬 10 筆，驗證 selector）
     python run_diffords.py --notify-line         # 完成後透過 LINE 推播通知
+    python run_diffords.py --build-index         # 爬完順便重建風味向量索引
 
 執行流程：
     1. GCS 下載 diffords.db（Cloud Run 環境）
     2. 執行視窗保護：7 天內已成功執行則跳過
     3. 解析 sitemap → 決定待爬 URL
     4. 爬取雞尾酒詳情頁
-    5. GCS 上傳 diffords.db
-    6. LINE 通知（成功/失敗/跳過）
+    5. 重建風味向量索引（--build-index，需 GEMINI_API_KEY）
+    6. GCS 上傳 diffords.db
+    7. LINE 通知（成功/失敗/跳過）
 """
 
 import argparse
@@ -126,6 +128,11 @@ def main():
         action="store_true",
         help="完成後透過 LINE Messaging API 發送通知",
     )
+    parser.add_argument(
+        "--build-index",
+        action="store_true",
+        help="爬完後重建風味向量索引（需 GEMINI_API_KEY，在 GCS 上傳前執行）",
+    )
     args = parser.parse_args()
 
     print(f"\n開始時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -155,6 +162,31 @@ def main():
 
     duration_secs = int(time.time() - _run_start)
     print(f"結束時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    # ── 重建風味向量索引 ──────────────────────────────────────────────
+    # 放在 GCS 上傳之前，這樣新爬到的酒譜連同索引一次寫回，不必上傳兩次。
+    # 沒設 GEMINI_API_KEY 就靜默跳過，與其他 LLM 功能同一套契約。
+    if args.build_index and success and _exc is None:
+        from diffords_guide import embeddings
+
+        if not os.getenv("GEMINI_API_KEY"):
+            print("\n🔎 未設定 GEMINI_API_KEY，略過向量索引重建")
+        else:
+            print("\n🔎 重建風味向量索引…")
+            try:
+                index_stats = embeddings.build_index(args.db_path)
+                print(
+                    f"   共 {index_stats['總數']} 筆，"
+                    f"更新 {index_stats['已寫入']} 筆，失敗 {index_stats['失敗']} 筆"
+                )
+                # 索引沒建完就上傳，線上會拿到新酒譜但查不到它們的風味 ——
+                # 寧可留著舊 DB，下次排程再補。
+                if index_stats["失敗"]:
+                    logger.error("向量索引有 %d 筆失敗", index_stats["失敗"])
+                    success = False
+            except Exception as exc:
+                logger.error("向量索引重建失敗：%s", exc)
+                success = False
 
     # ── GCS 上傳 ─────────────────────────────────────────────────────
     # 只有爬蟲成功時才回寫線上 DB，避免失敗或半更新狀態覆蓋 GCS 版本。

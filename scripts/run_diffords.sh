@@ -40,7 +40,9 @@ fi
 
 # Run the diffords scraper with incremental mode
 echo "Starting diffords scraper in INCREMENTAL mode..." | tee -a "$LOG_FILE"
-uv run python run_diffords.py --mode incremental --db-path diffords.db --notify-line 2>&1 | tee -a "$LOG_FILE"
+# --build-index：爬完順便補上新酒譜的風味向量，在 GCS 上傳前完成，
+# 不然線上會有查不到風味的酒譜（見 tasks/todo.md 的維運段落）
+uv run python run_diffords.py --mode incremental --db-path diffords.db --notify-line --build-index 2>&1 | tee -a "$LOG_FILE"
 EXIT_CODE=${PIPESTATUS[0]}
 if [ "$EXIT_CODE" -eq 0 ]; then
     echo "" | tee -a "$LOG_FILE"

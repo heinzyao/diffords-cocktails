@@ -27,7 +27,7 @@ gcloud run jobs update diffords-cocktails-scraper \
   --image "gcr.io/${PROJECT_ID}/diffords-cocktails-scraper:latest" \
   --region "$REGION" \
   --set-env-vars "GCS_BUCKET=${BUCKET_NAME},GCS_DB_BLOB=diffords.db" \
-  --set-secrets "LINE_CHANNEL_ID=DISTILLER_LINE_CHANNEL_ID:latest,LINE_CHANNEL_SECRET=DISTILLER_LINE_CHANNEL_SECRET:latest,LINE_USER_ID=DISTILLER_LINE_USER_ID:latest" \
+  --set-secrets "LINE_CHANNEL_ID=DISTILLER_LINE_CHANNEL_ID:latest,LINE_CHANNEL_SECRET=DISTILLER_LINE_CHANNEL_SECRET:latest,LINE_USER_ID=DISTILLER_LINE_USER_ID:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest" \
   || gcloud run jobs create diffords-cocktails-scraper \
     --image "gcr.io/${PROJECT_ID}/diffords-cocktails-scraper:latest" \
     --region "$REGION" \
@@ -35,7 +35,7 @@ gcloud run jobs update diffords-cocktails-scraper \
     --cpu 1 \
     --task-timeout 7200 \
     --set-env-vars "GCS_BUCKET=${BUCKET_NAME},GCS_DB_BLOB=diffords.db" \
-    --set-secrets "LINE_CHANNEL_ID=DISTILLER_LINE_CHANNEL_ID:latest,LINE_CHANNEL_SECRET=DISTILLER_LINE_CHANNEL_SECRET:latest,LINE_USER_ID=DISTILLER_LINE_USER_ID:latest"
+    --set-secrets "LINE_CHANNEL_ID=DISTILLER_LINE_CHANNEL_ID:latest,LINE_CHANNEL_SECRET=DISTILLER_LINE_CHANNEL_SECRET:latest,LINE_USER_ID=DISTILLER_LINE_USER_ID:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest"
 
 gcloud run deploy diffords-cocktails-bot \
   --image "gcr.io/${PROJECT_ID}/diffords-cocktails-bot:latest" \
