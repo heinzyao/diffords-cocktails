@@ -313,6 +313,8 @@ def fmt_cocktail_stats(db_path: str) -> str:
 
 
 _LIST_LABELS = {
+    "min_sweet_sour": "甜酸 >=",
+    "max_sweet_sour": "甜酸 <=",
     "keyword": "名稱含「{}」",
     "description": "描述含「{}」",
     "ingredient": "含有「{}」",
@@ -437,7 +439,8 @@ def fmt_help() -> str:
             "  材料 <材料>／標籤 <標籤>／描述 <關鍵字>",
             "  評分 <最低>／最高評分 <最高>",
             "  酒精濃度 <最低%>／最高酒精濃度 <最高%>",
-            "▪ 排序 <評分|酒精濃度|卡路里|日期|名稱|評分數> [升序|降序]",
+            "  甜酸 <最低>／最高甜酸 <最高>（0-10，越高越酸、越低越甜）",
+            "▪ 排序 <評分|酒精濃度|甜酸|卡路里|日期|名稱|評分數> [升序|降序]",
             "  預設依評分降序",
             "",
             "  例：雞尾酒列表 材料 gin 評分 4.2 排序 酒精濃度 降序 15筆",
@@ -451,6 +454,7 @@ def fmt_help() -> str:
             "  例：睡前喝的，3筆",
             "  例：有沒有不太烈的經典調酒",
             "  例：龍舌蘭做的，酸一點的",
+            "  例：不要太甜的調酒",
             "",
             "📊 【系統與爬蟲】",
             "▪ 雞尾酒統計",
@@ -469,6 +473,8 @@ _LIMIT_RE = re.compile(r"\s+(\d+)\s*筆$")
 # 所以貪婪取值是安全的。
 _GREEDY_KEYS = {"材料": "ingredient", "標籤": "tag", "描述": "description"}
 _NUMERIC_KEYS = {
+    "甜酸": "min_sweet_sour",
+    "最高甜酸": "max_sweet_sour",
     "評分": "min_rating",
     "最高評分": "max_rating",
     "酒精濃度": "min_abv",
@@ -480,6 +486,7 @@ _NUMERIC_KEYS = {
 _SORT_ALIASES = {
     "評分": "rating", "rating": "rating",
     "酒精濃度": "abv", "abv": "abv",
+    "甜酸": "sweet_sour", "sweet_sour": "sweet_sour",
     "卡路里": "calories", "calories": "calories",
     "日期": "date", "date": "date",
     "名稱": "name", "name": "name",

@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS cocktails (
     calories        INTEGER,
     prep_time_min   INTEGER,
     abv             REAL,
+    strength        INTEGER,
+    sweet_sour      INTEGER,
     date_published  DATE,
     url             TEXT UNIQUE NOT NULL,
     lastmod         DATE,
@@ -77,6 +79,7 @@ CREATE INDEX IF NOT EXISTS idx_ci_item_generic   ON cocktail_ingredients(item_ge
 _SORT_COLUMNS = {
     "rating": "c.rating_value",
     "abv": "c.abv",
+    "sweet_sour": "c.sweet_sour",
     "calories": "c.calories",
     "date": "c.date_published",
     "name": "c.name",
@@ -122,9 +125,27 @@ class DiffordsStorage:
         self.conn.execute("PRAGMA journal_mode = WAL")
         self._init_schema()
 
+    # 後來才加的欄位。CREATE TABLE IF NOT EXISTS 不會改動既有的表，
+    # 所以現存的 DB（GCS 上那顆）要靠 ALTER TABLE 補上。
+    _ADDED_COLUMNS = (
+        ("strength", "INTEGER"),
+        ("sweet_sour", "INTEGER"),
+    )
+
     def _init_schema(self):
         self.conn.executescript(_DDL)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self):
+        """把新欄位補進既有的 cocktails 表（冪等）。"""
+        existing = {row[1] for row in self.conn.execute("PRAGMA table_info(cocktails)")}
+        for column, decl in self._ADDED_COLUMNS:
+            if column not in existing:
+                self.conn.execute(
+                    f"ALTER TABLE cocktails ADD COLUMN {column} {decl}"
+                )
+                logger.info("已新增欄位 cocktails.%s", column)
 
     # ------------------------------------------------------------------
     # 查詢輔助（供爬蟲決策）
@@ -184,6 +205,8 @@ class DiffordsStorage:
                     review=COALESCE(:review, review),
                     history=COALESCE(:history, history),
                     abv=COALESCE(:abv, abv),
+                    strength=COALESCE(:strength, strength),
+                    sweet_sour=COALESCE(:sweet_sour, sweet_sour),
                     tags=:tags, rating_value=:rating_value, rating_count=:rating_count,
                     calories=:calories, prep_time_min=:prep_time_min,
                     date_published=:date_published, url=:url, lastmod=:lastmod,
@@ -198,11 +221,13 @@ class DiffordsStorage:
                 INSERT INTO cocktails
                     (id, name, slug, description, glassware, garnish, prepare,
                      instructions, review, history, tags, rating_value, rating_count,
-                     calories, prep_time_min, abv, date_published, url, lastmod)
+                     calories, prep_time_min, abv, strength, sweet_sour,
+                     date_published, url, lastmod)
                 VALUES
                     (:id, :name, :slug, :description, :glassware, :garnish, :prepare,
                      :instructions, :review, :history, :tags, :rating_value, :rating_count,
-                     :calories, :prep_time_min, :abv, :date_published, :url, :lastmod)
+                     :calories, :prep_time_min, :abv, :strength, :sweet_sour,
+                     :date_published, :url, :lastmod)
             """,
                 row,
             )
@@ -267,6 +292,8 @@ class DiffordsStorage:
             "calories": _to_int(data.get("calories")),
             "prep_time_min": _to_int(data.get("prep_time_minutes")),
             "abv": _to_real(data.get("abv")),
+            "strength": _to_int(data.get("strength")),
+            "sweet_sour": _to_int(data.get("sweet_sour")),
             "date_published": _to_text(data.get("date_published")),
             "url": url,
             "lastmod": _to_text(data.get("lastmod")),
@@ -324,6 +351,8 @@ class DiffordsStorage:
         min_abv: Optional[float] = None,
         max_abv: Optional[float] = None,
         min_count: Optional[int] = None,
+        min_sweet_sour: Optional[int] = None,
+        max_sweet_sour: Optional[int] = None,
         sort: str = "rating",
         desc: bool = True,
         limit: int = 20,
@@ -379,6 +408,13 @@ class DiffordsStorage:
         if min_count is not None:
             where.append("c.rating_count >= ?")
             params.append(min_count)
+        # sweet_sour 0-10，數值越高越偏酸/乾（甜點調酒約 4-5、Sours 約 7-8）
+        if min_sweet_sour is not None:
+            where.append("c.sweet_sour >= ?")
+            params.append(min_sweet_sour)
+        if max_sweet_sour is not None:
+            where.append("c.sweet_sour <= ?")
+            params.append(max_sweet_sour)
 
         clause = f"WHERE {' AND '.join(where)}" if where else ""
         column = _SORT_COLUMNS[sort]

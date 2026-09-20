@@ -91,7 +91,8 @@ Supported message commands:
 | `雞尾酒列表 描述 <keyword>` | Filter by description |
 | `雞尾酒列表 評分 <n>` / `最高評分 <n>` | Rating lower / upper bound |
 | `雞尾酒列表 酒精濃度 <n>` / `最高酒精濃度 <n>` | ABV lower / upper bound |
-| `雞尾酒列表 排序 <key> [升序\|降序]` | Sort by 評分/酒精濃度/卡路里/日期/名稱/評分數 |
+| `雞尾酒列表 甜酸 <n>` / `最高甜酸 <n>` | Sweet-to-sour axis 0-10 (higher = drier/sourer) |
+| `雞尾酒列表 排序 <key> [升序\|降序]` | Sort by 評分/酒精濃度/甜酸/卡路里/日期/名稱/評分數 |
 | `雞尾酒統計` | Show database stats |
 | `雞尾酒爬蟲 <test\|incremental\|full>` | Trigger scraper |
 | `狀態` | Show scraper status |
@@ -184,7 +185,8 @@ uv run python query.py list --tag Classic/vintage --sort calories --asc
 | `雞尾酒列表 描述 <關鍵字>` | 依描述篩選 |
 | `雞尾酒列表 評分 <n>` / `最高評分 <n>` | 評分下限／上限 |
 | `雞尾酒列表 酒精濃度 <n>` / `最高酒精濃度 <n>` | 酒精濃度下限／上限 |
-| `雞尾酒列表 排序 <依據> [升序\|降序]` | 依 評分／酒精濃度／卡路里／日期／名稱／評分數 排序 |
+| `雞尾酒列表 甜酸 <n>` / `最高甜酸 <n>` | 甜酸軸 0-10（越高越酸／乾，越低越甜）|
+| `雞尾酒列表 排序 <依據> [升序\|降序]` | 依 評分／酒精濃度／甜酸／卡路里／日期／名稱／評分數 排序 |
 | `雞尾酒統計` | 顯示資料庫摘要 |
 | `雞尾酒爬蟲 <test\|incremental\|full>` | 啟動爬蟲 |
 | `狀態` | 查看爬蟲狀態 |

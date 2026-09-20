@@ -43,6 +43,8 @@ DEFAULT_TIMEOUT_MS = 10_000
 # 這是唯一允許進入查詢層的鍵集合 —— LLM 回傳的其他欄位一律丟棄。
 _TEXT_KEYS = ("keyword", "description", "ingredient", "tag")
 _RANGE_KEYS: dict[str, tuple[float, float]] = {
+    "min_sweet_sour": (0.0, 10.0),
+    "max_sweet_sour": (0.0, 10.0),
     "min_rating": (0.0, 5.0),
     "max_rating": (0.0, 5.0),
     "min_abv": (0.0, 100.0),
@@ -62,6 +64,8 @@ _RESPONSE_SCHEMA = {
         "min_abv": {"type": "number", "description": "最低酒精濃度 %"},
         "max_abv": {"type": "number", "description": "最高酒精濃度 %"},
         "min_count": {"type": "integer", "description": "最低評分人數"},
+        "min_sweet_sour": {"type": "integer", "description": "甜酸下限 0-10"},
+        "max_sweet_sour": {"type": "integer", "description": "甜酸上限 0-10"},
         "sort": {"type": "string", "enum": list(SORT_KEYS)},
         "desc": {"type": "boolean", "description": "true 為降序（預設）"},
         "limit": {"type": "integer", "description": f"筆數 1-{_LIMIT_MAX}"},
@@ -103,6 +107,9 @@ tag 必須從下列清單原字照抄（精確比對，自創的值會查到零�
 - 只輸出你有把握的欄位。無法判斷的就省略，不要猜測或填預設值。
 - 「好喝的」「評價好的」→ min_rating 約 4.0
 - 「烈一點」→ min_abv 約 30；「不要太烈」「順口」→ max_abv 約 20
+- 甜酸是 0-10 的軸，**數值越高越酸/乾，越低越甜**（甜點調酒約 4-5、
+  酸味調酒約 7-8）。「甜一點」→ max_sweet_sour 約 5；
+  「不要太甜」「清爽」→ min_sweet_sour 約 6；「很酸」→ min_sweet_sour 約 7
 - 沒有提到筆數就不要輸出 limit。
 - 若訊息根本不是在查雞尾酒（例如閒聊、問天氣），回傳空物件 {{}}。
 
@@ -149,6 +156,11 @@ def sanitize(data: dict[str, Any]) -> dict[str, Any]:
     count = _clean_number(data.get("min_count"), 0, 10**6)
     if count is not None:
         out["min_count"] = int(count)
+
+    # 甜酸軸是整數刻度，_RANGE_KEYS 走 float，這裡統一轉回 int
+    for key in ("min_sweet_sour", "max_sweet_sour"):
+        if key in out:
+            out[key] = int(out[key])
 
     sort = _clean_text(data.get("sort"))
     if sort in SORT_KEYS:

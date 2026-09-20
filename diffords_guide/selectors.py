@@ -24,9 +24,8 @@ Garnish / History 也只有部分酒款具備。因此 label 一律同時傳新�
   - 食材：table.cocktail-ingredients__table tbody tr → td[0]=amount, td[1]=name
   - ABV：li 含 "alc./vol." 文字（頁面資料不足時會顯示說明文字而非數值，此時為 None）
 
-尚未提取的新區塊：h2[text="Flavour Profile"]，內容是口味維度的滑桿標籤
-（如 "No alcohol Medium Boozy Sweet Medium Dry/sour"）。屬結構化資料而非
-散文，若要支援「不太甜的酒」這類查詢再考慮加。
+  - 口味維度：Flavour Profile 區塊的滑桿 SVG，數值在 aria-label
+    （`<svg aria-label="Strength 9/10">`），見 extract_flavour_profile()
 
 改版前（仍支援，GCS 上多數資料抓於此時期）：
   - 標籤為 h3.m-0 且帶冒號："Glass:"、"Garnish:"、"Prepare:"、
@@ -58,6 +57,8 @@ _AMOUNT_PATTERN = re.compile(
 _ABV_PATTERN = re.compile(r"([\d.]+)%\s*alc", re.IGNORECASE)
 _CALORIES_PATTERN = re.compile(r"(\d+)")
 _ISO_DURATION_PATTERN = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?")
+# Flavour Profile 滑桿的 aria-label，如 "Strength 9/10"、"Sweet to sour 7/10"
+_FLAVOUR_PATTERN = re.compile(r"^(Strength|Sweet to sour)\s+(\d+)/10$", re.IGNORECASE)
 
 
 class DiffordsExtractor:
@@ -198,6 +199,29 @@ class DiffordsExtractor:
         return result
 
     @staticmethod
+    def extract_flavour_profile(soup: BeautifulSoup) -> dict[str, Optional[int]]:
+        """提取 Flavour Profile 的兩個維度（改版新增的區塊）。
+
+        數值藏在滑桿 SVG 的 aria-label：`<svg aria-label="Strength 9/10">`，
+        比解析滑桿兩端的文字標籤可靠得多。
+
+        - strength 0-10：無酒精是 0，Spirit-forward 約 8-9
+        - sweet_sour 0-10：**數值越高越偏酸/乾**，甜點調酒約 4-5、Sours 約 7-8
+
+        不是每款酒都有這個區塊，缺的維度回傳 None。
+        """
+        out: dict[str, Optional[int]] = {"strength": None, "sweet_sour": None}
+        for svg in soup.find_all("svg", class_="dg-component-range"):
+            match = _FLAVOUR_PATTERN.match(svg.get("aria-label") or "")
+            if not match:
+                continue
+            key = "strength" if match.group(1).lower() == "strength" else "sweet_sour"
+            value = int(match.group(2))
+            if 0 <= value <= 10:
+                out[key] = value
+        return out
+
+    @staticmethod
     def extract_abv(soup: BeautifulSoup) -> Optional[float]:
         """提取酒精度數（如 '16.14% alc./vol.'）。"""
         for li in soup.find_all("li"):
@@ -270,6 +294,7 @@ class DiffordsExtractor:
             "review":             cls._heading_next_text(soup, "Review"),
             "history":            cls._heading_next_text(soup, "History:"),
             "abv":                cls.extract_abv(soup),
+            **cls.extract_flavour_profile(soup),
             # ── 食材（僅 HTML 來源，無通用名稱）──
             "ingredients_generic": [],
             "ingredients_html":    ingredients_html,
@@ -308,6 +333,7 @@ class DiffordsExtractor:
             "review":             cls._heading_next_text(soup, "Review"),
             "history":            cls._heading_next_text(soup, "History:"),
             "abv":                cls.extract_abv(soup),
+            **cls.extract_flavour_profile(soup),
             # ── 食材（雙來源）──
             # ingredients_generic：JSON-LD 通用名稱，供查詢與資料分析使用
             # ingredients_html：HTML 真實品牌名稱，供顯示用

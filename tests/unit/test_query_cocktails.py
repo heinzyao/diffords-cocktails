@@ -157,7 +157,9 @@ def test_invalid_sort_key_raises(storage):
 
 
 def test_sort_keys_constant_is_exported():
-    assert SORT_KEYS == ("rating", "abv", "calories", "date", "name", "count")
+    assert SORT_KEYS == (
+        "rating", "abv", "sweet_sour", "calories", "date", "name", "count",
+    )
 
 
 def test_results_include_attached_ingredients(storage):

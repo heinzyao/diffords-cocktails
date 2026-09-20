@@ -128,3 +128,12 @@ def test_parse_query_returns_none_when_nothing_usable_extracted(monkeypatch):
         genai_mod, _ = _mock_genai(payload)
         with patch("google.genai.Client", genai_mod.Client):
             assert nlp.parse_query("閒聊") is None
+
+
+def test_sanitize_handles_sweet_sour_axis():
+    """甜酸軸 0-10，且必須轉成整數（query_cocktails 拿去跟 INTEGER 欄位比）。"""
+    out = nlp.sanitize({"max_sweet_sour": 5.0, "min_sweet_sour": 2})
+
+    assert out == {"max_sweet_sour": 5, "min_sweet_sour": 2}
+    assert all(isinstance(v, int) for v in out.values())
+    assert "max_sweet_sour" not in nlp.sanitize({"max_sweet_sour": 11})
