@@ -1,4 +1,3 @@
-import argparse
 
 import query
 from diffords_guide.storage import DiffordsStorage
@@ -10,7 +9,11 @@ def test_query_search_outputs_results(tmp_path, capsys):
     with DiffordsStorage(str(db_path)) as storage:
         storage.save_cocktail(_sample_cocktail())
 
-    args = argparse.Namespace(db=str(db_path), keyword="neg", limit=10, sort="rating", asc=False)
+    # 用真正的 parser 建 args：手工列舉 Namespace 欄位的話，
+    # 每次新增 CLI 選項都會讓這個測試壞掉，而且測不到 parser 本身。
+    args = query.build_parser().parse_args(
+        ["--db", str(db_path), "search", "neg", "--limit", "10"]
+    )
     query.cmd_search(args)
 
     out = capsys.readouterr().out
@@ -22,20 +25,8 @@ def test_query_list_filters_by_ingredient(tmp_path, capsys):
     with DiffordsStorage(str(db_path)) as storage:
         storage.save_cocktail(_sample_cocktail())
 
-    args = argparse.Namespace(
-        db=str(db_path),
-        keyword=None,
-        description=None,
-        ingredient="Campari",
-        tag=None,
-        rating=None,
-        max_rating=None,
-        abv=None,
-        max_abv=None,
-        min_count=None,
-        limit=10,
-        sort="rating",
-        asc=False,
+    args = query.build_parser().parse_args(
+        ["--db", str(db_path), "list", "--ingredient", "Campari", "--limit", "10"]
     )
     query.cmd_list(args)
 
