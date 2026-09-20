@@ -313,8 +313,8 @@ def fmt_cocktail_stats(db_path: str) -> str:
 
 
 _LIST_LABELS = {
-    "min_sweet_sour": "甜酸 >=",
-    "max_sweet_sour": "甜酸 <=",
+    "min_sweet_sour": "甜酸 ≥ {}",
+    "max_sweet_sour": "甜酸 ≤ {}",
     "keyword": "名稱含「{}」",
     "description": "描述含「{}」",
     "ingredient": "含有「{}」",

@@ -401,3 +401,13 @@ def test_semantic_query_falls_back_when_index_missing(tmp_path):
         result = bot.handle_message("有煙燻味的酒", str(tmp_path / "t.db"))
 
     assert "無法識別此指令" in result
+
+
+def test_every_condition_label_renders_its_value():
+    """_LIST_LABELS 走 .format(v)，漏掉 {} 的項目會顯示成「甜酸 ≥」這種沒有數值的標籤。"""
+    for key, template in bot._LIST_LABELS.items():
+        assert "{}" in template, f"{key} 的標籤少了 {{}} 佔位符"
+
+    rendered = bot._condition_labels({"min_sweet_sour": 6, "ingredient": "gin"})
+    assert "甜酸 ≥ 6" in rendered
+    assert "含有「gin」" in rendered

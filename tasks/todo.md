@@ -205,14 +205,50 @@ API 形狀不同（`genai.Client()` / `client.models.generate_content()`），
 - **併發** —— bot 跑 `--workers 1`（`CLAUDE.md` 有說明原因），LLM call 是阻塞的。
   要擴充只能加 `--threads`，**不要動 `--workers`**，否則 `_scrape_lock` 會失效。
 
-### 階段 2：風味語意檢索（條件性）
+### 階段 2：風味語意檢索 —— 已完成（2026-09-20）
 
 **啟動條件已達成** —— 階段 0 回填出 6,738 筆 `review`，內容確實是風味描述
 （如 Paper Plane：「Bittersweet with underlying bourbon character and lemon zest」），
 不再是 `description` 那種模板文字。素材約 600 KB。
 
-但仍建議**排在階段 1 之後**：階段 1 的 NL→查詢參數能解決大部分實際查詢，
-而階段 2 會讓 DB 膨脹三倍（見下），先確認前者不夠用再做。
+#### 成果
+
+`embeddings.py`：gemini-embedding-001、256 維、6,744 筆索引，numpy 全表點積。
+`diffords.db` 從 12.3 MB 漲到 21.0 MB。實測檢索品質：
+
+| 查詢 | Top 結果 | 相似度 |
+|---|---|---|
+| 苦苦的餐前酒 | Appetizer à l'Italienne（*bittersweet, herbal... before a meal*）| 0.877 |
+| 煙燻泥煤味，濃烈 | Dark and Smoky / Black Sabbath（*Islay single malt*）| 0.834 |
+| 濃郁巧克力甜點感 | Friar Tuck（*creamy with chocolate and hazelnut*）| 0.818 |
+| 清爽解渴，適合夏天 | Tropic（*a light, satisfying summertime cooler*）| 0.828 |
+
+中文查詢直接對應英文 review，跨語言 embedding 有效。可與結構化條件組合：
+「琴酒做的、苦苦的」→ `ingredient=gin` + 語意排序，結果都是苦味琴酒。
+
+#### 實作期間發現的問題
+
+1. **配額按每筆 content 計，不是每次呼叫** —— 一批 100 筆吃掉 100 個額度，
+   跑到第 30 批撞上每分鐘 3,000 上限，6,744 筆只寫進 3,000 筆。已加批次
+   間隔 2.5 秒與 429 重試。`source_hash` 的增量設計讓修好後只需補做失敗的
+   3,744 筆。
+2. **截斷後的向量不是單位長度**（L2 約 0.42）—— Gemini 只有 3072 維是
+   正規化的，用 Matryoshka 截斷到 256 維後必須自己正規化，否則點積不等於
+   cosine。
+3. **`search()` 在索引表不存在時拋例外**而非回傳 None —— 生產會炸（部署後
+   索引還沒建好的第一個語意查詢）。單元測試抓到的；bot 層測試把 search
+   整個 mock 掉，看不到。
+4. **`_LIST_LABELS` 漏了 `{}` 佔位符** —— 顯示成「甜酸 ≥」沒有數值。
+   已加測試檢查每個標籤都有佔位符。
+
+#### 維運
+
+重爬後要重建索引（review 變動的才會重算）：
+
+```bash
+uv run python query.py index      # 約 68 批、5 分鐘
+# 然後上傳 GCS，否則線上 bot 拿不到索引
+```
 
 - [ ] embedding 存 SQLite BLOB，查詢時 numpy 暴力算 cosine
       —— 6,955 × 768 維全表掃描 <50ms，不需要向量資料庫 / FAISS / pgvector
