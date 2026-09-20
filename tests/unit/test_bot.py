@@ -395,10 +395,18 @@ def test_semantic_query_routes_to_vector_search(tmp_path):
 
 
 def test_semantic_query_falls_back_when_index_missing(tmp_path):
-    """索引還沒建好時（search 回 None），行為要退回原本的錯誤訊息。"""
+    """索引還沒建好時（search 回 None），行為要退回原本的錯誤訊息。
+
+    DB 本身必須存在 —— 不然走的是「資料庫尚未建立」那條分支，測不到這件事。
+    """
+    from diffords_guide.storage import DiffordsStorage
+
+    db = tmp_path / "t.db"
+    DiffordsStorage(str(db)).close()
+
     with patch("diffords_guide.nlp.parse_query", return_value={"semantic_query": "煙燻味"}), \
          patch("diffords_guide.embeddings.search", return_value=None):
-        result = bot.handle_message("有煙燻味的酒", str(tmp_path / "t.db"))
+        result = bot.handle_message("有煙燻味的酒", str(db))
 
     assert "無法識別此指令" in result
 
