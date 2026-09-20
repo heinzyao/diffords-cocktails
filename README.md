@@ -98,6 +98,12 @@ Supported message commands:
 | `說明` | Show help |
 
 Conditions stack freely, e.g. `雞尾酒列表 材料 gin 評分 4.2 排序 酒精濃度 降序 15筆`.
+
+**Natural-language queries.** Anything that doesn't match a command above is sent to
+Gemini, which turns it into the same filters (e.g. 睡前喝的，3筆 → tag
+`Nightcap/sipping`, limit 3). Requires `GEMINI_API_KEY`; without it, or if parsing
+fails, the bot falls back to the usual "unrecognised command" reply. Known commands
+never hit the API.
 Any query accepts a trailing `N筆` to set the result count.
 
 ### Data Model
@@ -185,6 +191,10 @@ uv run python query.py list --tag Classic/vintage --sort calories --asc
 | `說明` | 顯示指令 |
 
 條件可自由疊加，例如 `雞尾酒列表 材料 gin 評分 4.2 排序 酒精濃度 降序 15筆`。
+
+**自然語言查詢。** 不符合上述任何指令的訊息，會交給 Gemini 轉成同一組篩選條件
+（例如「睡前喝的，3筆」→ 標籤 `Nightcap/sipping`、3 筆）。需要 `GEMINI_API_KEY`；
+未設定或解析失敗時，回覆與過去一樣的「無法識別此指令」。已知指令完全不會呼叫 API。
 任一查詢皆可在句尾加「N筆」指定顯示筆數。
 
 ### 已移除範圍

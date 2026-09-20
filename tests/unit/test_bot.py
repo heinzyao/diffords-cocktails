@@ -330,3 +330,45 @@ def test_search_title_and_empty_message_mention_filters(tmp_path):
     miss = bot.fmt_cocktail_search(str(db), "negroni", ingredient="campari")
     assert "含有「campari」" in miss
     assert "放寬條件" in miss
+
+
+# --- 自然語言查詢（階段 1）-------------------------------------------
+
+
+def test_known_commands_never_call_the_llm(tmp_path):
+    """舊指令必須完全不經過 Gemini —— 零延遲、零成本是這條路徑的前提。"""
+    db = str(tmp_path / "t.db")
+
+    with patch("diffords_guide.nlp.parse_query") as spy:
+        for msg in ("說明", "狀態", "雞尾酒統計", "雞尾酒列表 材料 gin",
+                    "雞尾酒搜尋 negroni", "雞尾酒列表 顏色 紅色"):
+            bot.handle_message(msg, db)
+
+    spy.assert_not_called()
+
+
+def test_unknown_message_falls_through_to_natural_language(tmp_path):
+    from diffords_guide.storage import DiffordsStorage
+
+    db = tmp_path / "t.db"
+    with DiffordsStorage(str(db)) as st:
+        assert st.save_cocktail({
+            "name": "Gin Fizz",
+            "url": "https://www.diffordsguide.com/cocktails/recipe/7/gin-fizz",
+            "rating_value": 4.5, "rating_count": 100,
+            "ingredients_generic": [{"sort_order": 1, "amount": "45 ml", "item": "Gin"}],
+        })
+
+    with patch("diffords_guide.nlp.parse_query", return_value={"ingredient": "gin"}) as spy:
+        result = bot.handle_message("幫我找琴酒調酒", str(db))
+
+    spy.assert_called_once_with("幫我找琴酒調酒")
+    assert "Gin Fizz" in result
+
+
+def test_unknown_message_keeps_old_error_when_llm_declines(tmp_path):
+    """LLM 解析不出來（回 None）時，行為必須跟加這條路徑之前一模一樣。"""
+    with patch("diffords_guide.nlp.parse_query", return_value=None):
+        result = bot.handle_message("今天天氣如何", str(tmp_path / "t.db"))
+
+    assert "無法識別此指令" in result

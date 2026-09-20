@@ -149,14 +149,46 @@ llm_parse()          → {"ingredient": "gin", "min_rating": 4.0, "max_abv": 25,
 fmt_cocktail_list(db_path, **args)   ← 既有函式，不動
 ```
 
-- [ ] 新增 `diffords_guide/nlp.py`，照抄 cat-lendar `app/services/nlp.py` 的 Gemini 模式
-- [ ] 輸出 schema 對齊 `storage.query_cocktails()` 的 kwargs：
-      `keyword / description / ingredient / tag / min_rating / max_rating /
-       min_abv / max_abv / min_count / sort / desc / limit`
-- [ ] 白名單驗證層：非白名單鍵、非法 `sort` 值、超出範圍的數值一律丟棄
-- [ ] `parse_command()` 的 `unknown` 分支接上，LLM 失敗時退回現有錯誤訊息
-- [ ] timeout 設 3s（LINE reply token 撐得住 30s，但體感要快）
-- [ ] 單元測試：mock LLM 回傳，涵蓋「合法 JSON」「非法欄位」「timeout」三條路徑
+- [x] 新增 `diffords_guide/nlp.py`
+- [x] 輸出 schema 對齊 `storage.query_cocktails()` 的 kwargs
+- [x] 白名單驗證層：非白名單鍵、非法 `sort` 值、超出範圍的數值一律丟棄
+- [x] `parse_command()` 的 `unknown` 分支接上，LLM 失敗時退回現有錯誤訊息
+- [x] 單元測試：mock LLM，涵蓋合法 / 非法欄位 / timeout / 非 JSON / 空結果
+- [x] bot 整合測試，含「舊指令絕不呼叫 LLM」的迴歸保護
+- [x] 部署掛上 secret（`deploy.yml` + `deploy_gcp.sh`，bot service only）
+- [x] `fmt_help()` 與 README 補上說明
+
+#### 階段 1 執行紀錄（2026-09-20）
+
+**改用 `google-genai` 而非 cat-lendar 的 `google-generativeai`** —— 後者在
+Python 3.14 無法解析相依（它已是 Google 標示的舊版 SDK）。新 SDK 另有好處：
+`response_schema` 能在協議層約束輸出結構，比只設 `response_mime_type` 更嚴。
+API 形狀不同（`genai.Client()` / `client.models.generate_content()`），
+且 bot 是同步 Flask，用同步版本而非 cat-lendar 的 async。
+
+**兩個只有實測才會發現的問題**（mock 測試全綠但功能不可用）：
+
+1. **timeout 3s 被 API 拒絕** —— Gemini 的最小 deadline 是 10 秒，送 3000ms
+   會收到 `400 INVALID_ARGUMENT`。原規劃寫的 3s 做不到，已改 10s。
+   實際回應多在 1-3 秒，10s 只是異常時的上限。
+2. **tag 是精確比對，LLM 猜的值查不到** —— 「酸一點的」→ `tag: "Sour"`，
+   但 DB 裡實際分類叫 `Sours (citrus)`，`query_cocktails` 用
+   `LOWER(t.value) = LOWER(?)`，結果 0 筆。已把出現 100 次以上的 29 個實際
+   分類值放進 prompt 讓 Gemini 挑，`nlp._KNOWN_TAGS` 有更新用的 SQL。
+
+實測結果（真實 API）：
+
+| 輸入 | 解析結果 | 延遲 |
+|---|---|---|
+| 幫我找評價好的琴酒調酒 | `ingredient=gin, min_rating=4.0, sort=rating` | 2.5s |
+| 有沒有不太烈的經典調酒 | `tag=Classic/vintage, max_abv=20` | 4.7s |
+| 龍舌蘭做的，酸一點的 | `ingredient=tequila, tag=Sours (citrus)` | 2.6s |
+| 睡前喝的，3筆 | `tag=Nightcap/sipping, limit=3` | 2.4s |
+| 最烈的酒排給我看 | `sort=abv, desc=true` | 1.6s |
+| 今天天氣如何 | `None`（退回原錯誤訊息） | 1.3s |
+
+測試期間出現過一次 `504 DEADLINE_EXCEEDED`，fallback 正常（回 `None`）。
+這條路徑本來就只在「原本會回錯誤訊息」時觸發，最差結果等同於沒有這功能。
 
 模型選型：
 

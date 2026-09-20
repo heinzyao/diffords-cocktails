@@ -46,6 +46,6 @@ gcloud run deploy diffords-cocktails-bot \
   --max-instances 2 \
   --allow-unauthenticated \
   --set-env-vars "GCS_BUCKET=${BUCKET_NAME},GCS_DB_BLOB=diffords.db,DIFFORDS_JOB_NAME=diffords-cocktails-scraper" \
-  --set-secrets "LINE_CHANNEL_ID=DISTILLER_LINE_CHANNEL_ID:latest,LINE_CHANNEL_SECRET=DISTILLER_LINE_CHANNEL_SECRET:latest,LINE_USER_ID=DISTILLER_LINE_USER_ID:latest"
+  --set-secrets "LINE_CHANNEL_ID=DISTILLER_LINE_CHANNEL_ID:latest,LINE_CHANNEL_SECRET=DISTILLER_LINE_CHANNEL_SECRET:latest,LINE_USER_ID=DISTILLER_LINE_USER_ID:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest"
 
 echo "Deployment complete."

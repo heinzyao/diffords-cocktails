@@ -12,6 +12,7 @@ dependencies = [
     "google-cloud-storage>=3.9.0",
     "google-cloud-run>=0.15.0",
     "gunicorn>=23.0.0",
+    "google-genai>=1.47.0",
 ]
 
 [dependency-groups]

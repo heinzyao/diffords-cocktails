@@ -19,6 +19,7 @@ import requests
 from dotenv import load_dotenv
 from flask import Flask, abort, request
 
+from diffords_guide import nlp
 from diffords_guide.config import DIFFORDS_DB_DEFAULT, GCS_DIFFORDS_DB_BLOB
 from diffords_guide.notify import fetch_access_token
 
@@ -445,6 +446,12 @@ def fmt_help() -> str:
             "",
             "💡 任一查詢皆可在句尾加「N筆」指定顯示筆數，例如「雞尾酒列表 材料 gin 15筆」",
             "",
+            "💬 【直接用講的】",
+            "▪ 記不住指令也沒關係，直接描述你想喝什麼",
+            "  例：睡前喝的，3筆",
+            "  例：有沒有不太烈的經典調酒",
+            "  例：龍舌蘭做的，酸一點的",
+            "",
             "📊 【系統與爬蟲】",
             "▪ 雞尾酒統計",
             "  顯示資料庫統計資訊",
@@ -630,6 +637,17 @@ def handle_message(text: str, db_path: str = DB_DEFAULT) -> str:
             logger.exception("Failed to start scraper")
             return f"❌ Difford's Guide 爬蟲任務啟動失敗：{exc}"
         return f"🚀 Difford's Guide 爬蟲任務已成功啟動（模式：{mode}）！"
+    # 舊指令都沒命中 —— 交給 Gemini 試著解析成查詢條件。
+    # 這是純加分路徑：解析不出來（或沒設 GEMINI_API_KEY）就照舊回提示。
+    if command == "unknown":
+        nl_args = nlp.parse_query(args[0])
+        if nl_args:
+            logger.info("自然語言查詢：%r → %s", args[0], nl_args)
+            # 不另加開場白 —— fmt_cocktail_list 本來就會列出實際套用的篩選條件，
+            # 使用者從那行就能看出有沒有被理解錯，多一句「幫你找到這些」
+            # 在零結果時反而跟它的「找不到符合…」打架。
+            return fmt_cocktail_list(db_path, **nl_args)
+
     return "💡 無法識別此指令。請輸入「說明」查看所有可用指令！"
 
 
