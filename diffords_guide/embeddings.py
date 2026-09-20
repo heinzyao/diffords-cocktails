@@ -30,6 +30,7 @@ import hashlib
 import logging
 import os
 import sqlite3
+import time
 from typing import Any, Optional
 
 import numpy as np
@@ -40,6 +41,12 @@ EMBED_MODEL = "gemini-embedding-001"
 DIMS = 256
 # Gemini 對單次 embed_content 的 contents 數量有上限，100 是保守值
 BATCH_SIZE = 100
+# 配額是**按每筆 content** 計算而非每次呼叫（實測 3,000/分鐘），
+# 所以一批 100 筆就吃掉 100 個額度 —— 每批之間至少要隔 2 秒才不會撞上。
+_BATCH_INTERVAL_SEC = 2.5
+# 429 的 RetryInfo 通常建議 ~20 秒
+_RETRY_DELAY_SEC = 21
+_MAX_RETRIES = 4
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS cocktail_embeddings (
@@ -81,20 +88,32 @@ def embed_texts(texts: list[str], *, task_type: str) -> Optional[list[np.ndarray
         logger.warning("google-genai 未安裝，語意檢索停用")
         return None
 
-    try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.embed_content(
-            model=os.getenv("GEMINI_EMBED_MODEL", EMBED_MODEL),
-            contents=texts,
-            config=types.EmbedContentConfig(
-                task_type=task_type, output_dimensionality=DIMS
-            ),
-        )
-    except Exception as exc:
-        logger.warning("Embedding 失敗（%s）：%s", type(exc).__name__, exc)
-        return None
+    client = genai.Client(api_key=api_key)
+    model = os.getenv("GEMINI_EMBED_MODEL", EMBED_MODEL)
+    config = types.EmbedContentConfig(
+        task_type=task_type, output_dimensionality=DIMS
+    )
 
-    return [_normalize(e.values) for e in response.embeddings]
+    for attempt in range(_MAX_RETRIES):
+        try:
+            response = client.models.embed_content(
+                model=model, contents=texts, config=config
+            )
+            return [_normalize(e.values) for e in response.embeddings]
+        except Exception as exc:
+            # 建索引時很容易打到每分鐘配額；這是暫時的，等一下就好。
+            # 查詢路徑只送一筆，幾乎不會走到這裡。
+            if "RESOURCE_EXHAUSTED" in str(exc) or "429" in str(exc):
+                if attempt < _MAX_RETRIES - 1:
+                    logger.info(
+                        "配額已滿，%d 秒後重試（%d/%d）",
+                        _RETRY_DELAY_SEC, attempt + 1, _MAX_RETRIES - 1,
+                    )
+                    time.sleep(_RETRY_DELAY_SEC)
+                    continue
+            logger.warning("Embedding 失敗（%s）：%s", type(exc).__name__, str(exc)[:200])
+            return None
+    return None
 
 
 def build_index(db_path: str, *, rebuild: bool = False) -> dict[str, int]:
@@ -144,6 +163,9 @@ def build_index(db_path: str, *, rebuild: bool = False) -> dict[str, int]:
             )
         stats["已寫入"] += len(batch)
         logger.info("  已處理 %d/%d", stats["已寫入"], len(pending))
+        # 節流：配額按每筆 content 計，不隔一下就會在第 30 批左右撞上限
+        if start + BATCH_SIZE < len(pending):
+            time.sleep(_BATCH_INTERVAL_SEC)
 
     conn.close()
     return stats
