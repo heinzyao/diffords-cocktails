@@ -2,6 +2,7 @@
 """Difford's Guide cocktail database query CLI."""
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 from typing import Any
@@ -126,13 +127,16 @@ def cmd_list(args: argparse.Namespace) -> None:
         "min_abv": args.abv,
         "max_abv": args.max_abv,
         "min_count": args.min_count,
+        "min_sweet_sour": args.sweet_sour,
+        "max_sweet_sour": args.max_sweet_sour,
     }
     active = {k: v for k, v in filters.items() if v is not None}
 
     labels = {
         "keyword": "名稱含", "description": "描述含", "ingredient": "材料含",
         "tag": "標籤", "min_rating": "評分 >=", "max_rating": "評分 <=",
-        "min_abv": "ABV >=", "max_abv": "ABV <=", "min_count": "評分數 >=",
+        "min_abv": "ABV >=", "max_abv": "ABV <=",
+        "min_sweet_sour": "甜酸 >=", "max_sweet_sour": "甜酸 <=", "min_count": "評分數 >=",
     }
     parts = [f"{labels[k]} {v}" for k, v in active.items()]
 
@@ -151,6 +155,40 @@ def cmd_list(args: argparse.Namespace) -> None:
 
     print(f"\n雞尾酒列表（{title}，顯示 {len(rows)} 筆）\n")
     _print_rows(rows)
+
+
+def cmd_index(args: argparse.Namespace) -> None:
+    """建立／更新風味語意檢索的向量索引。"""
+    from diffords_guide import embeddings
+
+    if not Path(args.db).exists():
+        print(f"資料庫不存在：{args.db}")
+        raise SystemExit(1)
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    stats = embeddings.build_index(args.db, rebuild=args.rebuild)
+    print("\n向量索引完成")
+    for key, value in stats.items():
+        print(f"  {key}: {value}")
+    if stats["失敗"]:
+        raise SystemExit(1)
+
+
+def cmd_similar(args: argparse.Namespace) -> None:
+    """用風味描述做語意檢索（需要先跑 index）。"""
+    from diffords_guide import embeddings
+
+    results = embeddings.search(args.db, args.query, limit=args.limit)
+    if results is None:
+        print("語意檢索無法使用：請確認 GEMINI_API_KEY 已設定且已執行 `query.py index`。")
+        raise SystemExit(1)
+    if not results:
+        print("（無結果）")
+        return
+    print(f'\n喝起來像「{args.query}」：\n')
+    for i, row in enumerate(results, 1):
+        print(f"{i}. {row['name']}  (相似度 {row['score']:.3f})")
+        if row.get("review"):
+            print(f"   {_truncate(row['review'], 78)}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -193,10 +231,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_list.add_argument("--abv", type=float, help="最低 ABV")
     p_list.add_argument("--max-abv", type=float, dest="max_abv", help="最高 ABV")
     p_list.add_argument("--min-count", type=int, dest="min_count", help="最低評分人數")
+    p_list.add_argument("--sweet-sour", type=int, dest="sweet_sour",
+                        help="甜酸下限 0-10（越高越酸／乾）")
+    p_list.add_argument("--max-sweet-sour", type=int, dest="max_sweet_sour",
+                        help="甜酸上限 0-10（越低越甜）")
     p_list.add_argument("--sort", choices=SORT_KEYS, default="rating")
     p_list.add_argument("--asc", action="store_true", help="改為升序（預設降序）")
     p_list.add_argument("--limit", type=_positive_int, default=20)
     p_list.set_defaults(func=cmd_list)
+
+    p_index = sub.add_parser("index", help="建立／更新風味語意檢索索引")
+    p_index.add_argument("--rebuild", action="store_true", help="忽略既有指紋全部重算")
+    p_index.set_defaults(func=cmd_index)
+
+    p_similar = sub.add_parser("similar", help="用風味描述搜尋（需先跑 index）")
+    p_similar.add_argument("query")
+    p_similar.add_argument("--limit", type=_positive_int, default=10)
+    p_similar.set_defaults(func=cmd_similar)
 
     return parser
 

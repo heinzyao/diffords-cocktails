@@ -372,3 +372,32 @@ def test_unknown_message_keeps_old_error_when_llm_declines(tmp_path):
         result = bot.handle_message("今天天氣如何", str(tmp_path / "t.db"))
 
     assert "無法識別此指令" in result
+
+
+def test_semantic_query_routes_to_vector_search(tmp_path):
+    """風味描述要走語意檢索，並把其他條件當成候選篩選。"""
+    db = str(tmp_path / "t.db")
+    parsed = {"ingredient": "gin", "semantic_query": "苦苦的", "limit": 5}
+    hits = [{"id": 1, "name": "Negroni", "review": "Bittersweet.", "rating_value": 4.8}]
+
+    with patch("diffords_guide.nlp.parse_query", return_value=parsed), \
+         patch("diffords_guide.embeddings.search", return_value=hits) as search, \
+         patch("bot._open_storage") as open_storage:
+        open_storage.return_value.query_cocktails.return_value = [{"id": 1}]
+        result = bot.handle_message("琴酒做的，苦苦的", db)
+
+    # semantic_query 與 limit 不該混進 query_cocktails 的篩選條件
+    assert open_storage.return_value.query_cocktails.call_args.kwargs["ingredient"] == "gin"
+    assert "semantic_query" not in open_storage.return_value.query_cocktails.call_args.kwargs
+    assert search.call_args.kwargs["candidate_ids"] == [1]
+    assert search.call_args.kwargs["limit"] == 5
+    assert "Negroni" in result
+
+
+def test_semantic_query_falls_back_when_index_missing(tmp_path):
+    """索引還沒建好時（search 回 None），行為要退回原本的錯誤訊息。"""
+    with patch("diffords_guide.nlp.parse_query", return_value={"semantic_query": "煙燻味"}), \
+         patch("diffords_guide.embeddings.search", return_value=None):
+        result = bot.handle_message("有煙燻味的酒", str(tmp_path / "t.db"))
+
+    assert "無法識別此指令" in result

@@ -105,6 +105,12 @@ Gemini, which turns it into the same filters (e.g. 睡前喝的，3筆 → tag
 `Nightcap/sipping`, limit 3). Requires `GEMINI_API_KEY`; without it, or if parsing
 fails, the bot falls back to the usual "unrecognised command" reply. Known commands
 never hit the API.
+
+**Flavour search.** When the message describes how a drink *tastes* ("苦苦的",
+"清爽帶柑橘香氣"), the query is matched against recipe reviews by meaning rather
+than keywords, and can be combined with normal filters ("琴酒做的、苦苦的" filters
+to gin first, then ranks by flavour). Requires a vector index built with
+`uv run python query.py index`; without it the bot falls back as above.
 Any query accepts a trailing `N筆` to set the result count.
 
 ### Data Model
@@ -197,6 +203,11 @@ uv run python query.py list --tag Classic/vintage --sort calories --asc
 **自然語言查詢。** 不符合上述任何指令的訊息，會交給 Gemini 轉成同一組篩選條件
 （例如「睡前喝的，3筆」→ 標籤 `Nightcap/sipping`、3 筆）。需要 `GEMINI_API_KEY`；
 未設定或解析失敗時，回覆與過去一樣的「無法識別此指令」。已知指令完全不會呼叫 API。
+
+**風味搜尋。** 當訊息描述的是「喝起來的感覺」（「苦苦的」「清爽帶柑橘香氣」），
+會改用語意比對酒譜的品飲評語，而非關鍵字比對，且可與一般條件組合
+（「琴酒做的、苦苦的」會先篩出琴酒調酒，再依風味排序）。需要先用
+`uv run python query.py index` 建立向量索引；未建立時同樣退回上述行為。
 任一查詢皆可在句尾加「N筆」指定顯示筆數。
 
 ### 已移除範圍

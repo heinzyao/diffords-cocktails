@@ -69,6 +69,10 @@ _RESPONSE_SCHEMA = {
         "sort": {"type": "string", "enum": list(SORT_KEYS)},
         "desc": {"type": "boolean", "description": "true 為降序（預設）"},
         "limit": {"type": "integer", "description": f"筆數 1-{_LIMIT_MAX}"},
+        "semantic_query": {
+            "type": "string",
+            "description": "使用者描述的風味口感，原話保留；沒描述風味就省略",
+        },
     },
 }
 
@@ -112,6 +116,14 @@ tag 必須從下列清單原字照抄（精確比對，自創的值會查到零�
   「不要太甜」「清爽」→ min_sweet_sour 約 6；「很酸」→ min_sweet_sour 約 7
 - 沒有提到筆數就不要輸出 limit。
 - 若訊息根本不是在查雞尾酒（例如閒聊、問天氣），回傳空物件 {{}}。
+
+風味描述走另一條路：
+如果使用者描述的是**喝起來的感覺**（「苦苦的」「有草本味」「清爽」
+「奶味濃」「煙燻感」），把那段描述原話放進 semantic_query —— 這些
+形容詞在資料庫裡沒有對應欄位，要靠語意比對酒譜的品飲評語。
+可以和其他條件並存：「琴酒做的、苦苦的」→ ingredient="gin" 且
+semantic_query="苦苦的"。純粹是分類或數值的條件（材料、評分、標籤、
+酒精濃度、甜酸）不要放進 semantic_query。
 
 只輸出 JSON，不要任何說明文字。"""
 
@@ -161,6 +173,10 @@ def sanitize(data: dict[str, Any]) -> dict[str, Any]:
     for key in ("min_sweet_sour", "max_sweet_sour"):
         if key in out:
             out[key] = int(out[key])
+
+    semantic = _clean_text(data.get("semantic_query"))
+    if semantic:
+        out["semantic_query"] = semantic
 
     sort = _clean_text(data.get("sort"))
     if sort in SORT_KEYS:

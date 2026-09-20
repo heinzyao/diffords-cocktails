@@ -20,8 +20,11 @@ uv run python run_diffords.py --mode full         # re-scrape everything
 uv run python query.py stats
 uv run python query.py list --ingredient gin --rating 4.2 --sort abv --limit 15
 # 條件可疊加：--keyword --description --ingredient --tag --rating --max-rating
-#             --abv --max-abv --min-count
-# 排序：--sort {rating,abv,calories,date,name,count} [--asc]
+#             --abv --max-abv --min-count --sweet-sour --max-sweet-sour
+# 排序：--sort {rating,abv,sweet_sour,calories,date,name,count} [--asc]
+
+uv run python query.py index                      # build/refresh flavour vector index
+uv run python query.py similar "smoky and bitter" # semantic search (needs index)
 
 uv run python bot.py                              # LINE bot on PORT (default 8000)
 ```
@@ -41,6 +44,24 @@ in-process state — extra workers each get their own copy, which would silently
 the lock and let two scrapers write the same SQLite blob. Scale with `--threads`
 (same process, so the lock still holds), never with `--workers`. Real horizontal
 scaling requires moving that state to shared storage first.
+
+### LLM features (bot only, always optional)
+
+Two Gemini-backed paths, both **pure add-ons** — every failure mode returns to the
+pre-LLM behaviour, and neither is on the path of any existing command:
+
+- `nlp.py` — natural language → `query_cocktails()` kwargs. Wired into the
+  `unknown` branch of `parse_command()`, so known commands never call the API.
+  Output is constrained by `response_schema` and then filtered through a
+  whitelist; the LLM never touches SQL.
+- `embeddings.py` — flavour semantic search over the `review` column
+  (256-dim vectors in `cocktail_embeddings`, brute-force cosine via numpy).
+  Built with `query.py index`; the table lives in `diffords.db` so it syncs
+  through GCS like everything else.
+
+Both return `None` when `GEMINI_API_KEY` is unset, the call times out, or nothing
+usable comes back — **keep that contract**. Deployment mounts the key on the bot
+service only (the scraper does no NLP). Note Gemini rejects deadlines under 10s.
 
 ### Scrape flow (the core logic)
 1. `scraper.parse_sitemap()` reads `SITEMAP_URL` → list of URLs + `lastmod`.

@@ -410,6 +410,54 @@ def fmt_cocktail_list(
     )
 
 
+def fmt_semantic_search(
+    db_path: str, query: str, filters: dict[str, Any], limit: int
+) -> str:
+    """風味語意檢索的結果。
+
+    有結構化條件時先用 query_cocktails 篩出候選，再在子集裡做風味排序 ——
+    「琴酒做的、苦苦的」要的是苦味的琴酒，不是任何一杯苦的酒。
+    """
+    from diffords_guide import embeddings
+
+    storage = _open_storage(db_path)
+    if storage is None:
+        return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
+
+    candidate_ids = None
+    try:
+        if filters:
+            # 候選放寬到 200，讓語意排序有足夠的挑選空間
+            rows = storage.query_cocktails(**{**filters, "limit": 200})
+            candidate_ids = [r["id"] for r in rows]
+            if not candidate_ids:
+                return f"🔍 沒有符合條件的雞尾酒，請放寬條件再試一次！"
+    finally:
+        storage.close()
+
+    results = embeddings.search(
+        db_path, query, limit=limit, candidate_ids=candidate_ids
+    )
+    if results is None:
+        return ""  # 索引未建立或 API 不可用 —— 由呼叫端退回舊行為
+    if not results:
+        return f"🔍 找不到喝起來像「{query}」的雞尾酒，換個說法試試？"
+
+    detail = "・".join(_condition_labels(filters)) if filters else ""
+    header = f"🍸 喝起來像「{query}」" + (f"（{detail}）" if detail else "") + "："
+    lines = [header, "──────────────────"]
+    for i, row in enumerate(results, 1):
+        rating = row.get("rating_value")
+        star = f" ({rating:.1f} ★)" if isinstance(rating, (int, float)) else ""
+        lines.append(f"{i}. {row['name']}{star}")
+        review = _truncate(row.get("review"), 60)
+        if review:
+            lines.append(f"   {review}")
+    lines.append("──────────────────")
+    lines.append("💡 輸入「雞尾酒酒譜 <酒名>」即可查看完整調製步驟！")
+    return "\n".join(lines)
+
+
 def fmt_status() -> str:
     with _scrape_lock:
         if not _scrape_state["running"]:
@@ -650,10 +698,18 @@ def handle_message(text: str, db_path: str = DB_DEFAULT) -> str:
         nl_args = nlp.parse_query(args[0])
         if nl_args:
             logger.info("自然語言查詢：%r → %s", args[0], nl_args)
-            # 不另加開場白 —— fmt_cocktail_list 本來就會列出實際套用的篩選條件，
-            # 使用者從那行就能看出有沒有被理解錯，多一句「幫你找到這些」
-            # 在零結果時反而跟它的「找不到符合…」打架。
-            return fmt_cocktail_list(db_path, **nl_args)
+            semantic = nl_args.pop("semantic_query", None)
+            if semantic:
+                limit = nl_args.pop("limit", LIST_LIMIT_DEFAULT)
+                # 風味描述交給語意檢索；空字串代表索引沒建好，繼續往下退回舊訊息
+                rendered = fmt_semantic_search(db_path, semantic, nl_args, limit)
+                if rendered:
+                    return rendered
+            elif nl_args:
+                # 不另加開場白 —— fmt_cocktail_list 本來就會列出實際套用的篩選條件，
+                # 使用者從那行就能看出有沒有被理解錯，多一句「幫你找到這些」
+                # 在零結果時反而跟它的「找不到符合…」打架。
+                return fmt_cocktail_list(db_path, **nl_args)
 
     return "💡 無法識別此指令。請輸入「說明」查看所有可用指令！"
 
