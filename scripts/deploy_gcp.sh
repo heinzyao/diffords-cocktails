@@ -42,7 +42,7 @@ gcloud run deploy diffords-cocktails-bot \
   --region "$REGION" \
   --memory 512Mi \
   --cpu 1 \
-  --min-instances 0 \
+  --min-instances 1 \
   --max-instances 2 \
   --allow-unauthenticated \
   --set-env-vars "GCS_BUCKET=${BUCKET_NAME},GCS_DB_BLOB=diffords.db,DIFFORDS_JOB_NAME=diffords-cocktails-scraper" \
