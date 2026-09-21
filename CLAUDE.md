@@ -83,7 +83,7 @@ Two Cloud Run resources, one bucket:
 - Job `diffords-cocktails-scraper` — the scraper. Also deployed by the same workflow; triggered on demand by the bot (`DIFFORDS_JOB_NAME`).
 - Bucket `diffords-cocktails-data` holds `diffords.db`, the source of truth in prod.
 
-**Scheduled scraping runs on the local Mac, not in the cloud.** `~/Library/LaunchAgents/com.distiller.diffords.plist`
+**Scheduled scraping runs on the local Mac, not in the cloud.** `~/Library/LaunchAgents/com.diffords-cocktails.plist`
 runs `scripts/run_diffords.sh` every Sunday at 04:00, which writes to `diffords-cocktails-data`.
 That script passes `--build-index`, so the flavour vectors for newly scraped recipes are
 rebuilt **before** the GCS upload — one upload, and the online DB never has recipes the
