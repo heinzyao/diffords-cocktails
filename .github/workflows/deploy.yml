@@ -84,7 +84,7 @@ jobs:
             --region $REGION \
             --memory 512Mi \
             --cpu 1 \
-            --min-instances 1 \
+            --min-instances 0 \
             --max-instances 2 \
             --allow-unauthenticated \
             --set-env-vars GCS_BUCKET=$BUCKET,GCS_DB_BLOB=diffords.db,DIFFORDS_JOB_NAME=diffords-cocktails-scraper \
