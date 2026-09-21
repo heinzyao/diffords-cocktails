@@ -66,6 +66,16 @@ def _verify_signature(body: bytes, signature: str, channel_secret: str) -> bool:
     return base64.b64encode(digest).decode() == signature
 
 
+def _is_admin(user_id: str | None) -> bool:
+    """只有 LINE_USER_ID 本人算管理員。
+
+    沒設 LINE_USER_ID 就誰都不是 —— 預設關閉。這個 bot 會被分享給其他人，
+    而爬蟲指令會開 Cloud Run Job 改寫共用的 GCS DB，不能讓任何人都打得動。
+    """
+    admin = os.getenv("LINE_USER_ID", "")
+    return bool(admin) and user_id == admin
+
+
 def _reply(reply_token: str, text: str, access_token: str) -> bool:
     chunks = [text[i : i + MSG_LIMIT] for i in range(0, len(text), MSG_LIMIT)][:5]
     payload = {"replyToken": reply_token, "messages": [{"type": "text", "text": c} for c in chunks]}
@@ -658,7 +668,9 @@ def parse_command(text: str) -> tuple[str, list[Any]]:
     return "unknown", [text]
 
 
-def handle_message(text: str, db_path: str = DB_DEFAULT) -> str:
+def handle_message(
+    text: str, db_path: str = DB_DEFAULT, *, user_id: str | None = None
+) -> str:
     command, args = parse_command(text)
     if command == "help":
         return fmt_help()
@@ -675,6 +687,8 @@ def handle_message(text: str, db_path: str = DB_DEFAULT) -> str:
     if command == "list":
         return fmt_cocktail_list(db_path, **args[0])
     if command == "scrape":
+        if not _is_admin(user_id):
+            return "⚠️ 「雞尾酒爬蟲」是管理員專用指令。輸入「說明」查看可用指令！"
         mode = args[0]
         with _scrape_lock:
             if _scrape_state["running"]:
@@ -749,7 +763,7 @@ def webhook():
         # 指令文法是自由輸入，解析路徑比舊的固定 regex 寬得多。少了這層保險，
         # 任何未預期的例外都會炸穿 Flask handler，使用者只會收到沉默。
         try:
-            reply = handle_message(text)
+            reply = handle_message(text, user_id=(event.get("source") or {}).get("userId"))
         except Exception:
             logger.exception("handle_message 失敗：%r", text)
             reply = "⚠️ 處理指令時發生未預期的錯誤，請稍後再試或輸入「說明」查看可用指令。"

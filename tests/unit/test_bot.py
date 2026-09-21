@@ -261,10 +261,13 @@ def test_handle_message_unknown():
     assert "說明" in bot.handle_message("not a command")
 
 
-def test_start_scraper_sets_running_state(tmp_path):
+def test_start_scraper_sets_running_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("LINE_USER_ID", "Uadmin")
     db_path = tmp_path / "diffords.db"
     with patch.object(bot, "_start_diffords") as mock_start:
-        result = bot.handle_message("雞尾酒爬蟲 test", db_path=str(db_path))
+        result = bot.handle_message(
+            "雞尾酒爬蟲 test", db_path=str(db_path), user_id="Uadmin"
+        )
 
     assert "成功啟動" in result
     mock_start.assert_called_once_with("test", str(db_path))
@@ -419,3 +422,58 @@ def test_every_condition_label_renders_its_value():
     rendered = bot._condition_labels({"min_sweet_sour": 6, "ingredient": "gin"})
     assert "甜酸 ≥ 6" in rendered
     assert "含有「gin」" in rendered
+
+
+def test_scrape_requires_admin(monkeypatch):
+    """爬蟲會觸發 Cloud Run Job 並改寫共用 DB —— 非管理員必須擋在啟動之前。"""
+    monkeypatch.setenv("LINE_USER_ID", "Uadmin")
+
+    with patch.object(bot, "_start_diffords") as start:
+        assert "管理員" in bot.handle_message("雞尾酒爬蟲 full", user_id="Ustranger")
+        assert "管理員" in bot.handle_message("雞尾酒爬蟲 full", user_id=None)
+        start.assert_not_called()
+        # 被擋下時不可留下髒鎖，否則管理員自己也啟動不了
+        assert bot._scrape_state["running"] is False
+
+        assert "已成功啟動" in bot.handle_message("雞尾酒爬蟲 full", user_id="Uadmin")
+        start.assert_called_once()
+
+
+def test_scrape_denied_when_admin_unset(monkeypatch):
+    """沒設 LINE_USER_ID 就誰都不是管理員 —— 預設關閉，不是預設開放。"""
+    monkeypatch.setenv("LINE_USER_ID", "")
+
+    with patch.object(bot, "_start_diffords") as start:
+        assert "管理員" in bot.handle_message("雞尾酒爬蟲 test", user_id=None)
+        assert "管理員" in bot.handle_message("雞尾酒爬蟲 test", user_id="Uanyone")
+        start.assert_not_called()
+
+
+def test_webhook_passes_user_id(monkeypatch):
+    """webhook 必須把 source.userId 帶下去，否則權限檢查永遠看不到發話者。"""
+    monkeypatch.setenv("LINE_CHANNEL_ID", "id")
+    monkeypatch.setenv("LINE_CHANNEL_SECRET", "secret")
+    body = (
+        '{"events":[{"type":"message","replyToken":"r",'
+        '"source":{"type":"user","userId":"Uxyz"},'
+        '"message":{"type":"text","text":"說明"}}]}'
+    ).encode()
+    signature = bot.base64.b64encode(
+        bot.hmac.new(b"secret", body, bot.hashlib.sha256).digest()
+    ).decode()
+
+    with (
+        patch.object(bot, "_get_cached_token", return_value="token"),
+        patch.object(bot, "_reply", return_value=True),
+        patch.object(bot, "handle_message", return_value="ok") as mock_handle,
+    ):
+        client = bot.app.test_client()
+        resp = client.post(
+            "/webhook",
+            data=body,
+            content_type="application/json",
+            headers={"X-Line-Signature": signature},
+        )
+
+    assert resp.status_code == 200
+    assert mock_handle.call_args.kwargs["user_id"] == "Uxyz"
