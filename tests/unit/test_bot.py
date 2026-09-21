@@ -1,3 +1,6 @@
+import json
+import time
+
 from unittest.mock import MagicMock, patch
 
 import bot
@@ -520,3 +523,76 @@ def test_known_commands_bypass_rate_limit(monkeypatch):
 
     assert "指令" in bot.handle_message("說明", user_id="Ualice")
     assert bot._nlp_calls == {}
+
+
+def _signed_body(events: list[dict]) -> tuple[bytes, str]:
+    body = json.dumps({"events": events}).encode()
+    sig = bot.base64.b64encode(
+        bot.hmac.new(b"secret", body, bot.hashlib.sha256).digest()
+    ).decode()
+    return body, sig
+
+
+def _text_event(text: str, token: str) -> dict:
+    return {
+        "type": "message",
+        "replyToken": token,
+        "source": {"type": "user", "userId": "Ualice"},
+        "message": {"type": "text", "text": text},
+    }
+
+
+def test_webhook_handles_batched_events_concurrently(monkeypatch):
+    """LINE 會把連打的訊息打包在一個 request —— 序列處理會讓後面的 replyToken 過期。"""
+    monkeypatch.setenv("LINE_CHANNEL_ID", "id")
+    monkeypatch.setenv("LINE_CHANNEL_SECRET", "secret")
+    body, sig = _signed_body([_text_event("說明", f"r{i}") for i in range(3)])
+
+    def slow(*args, **kwargs):
+        time.sleep(0.4)
+        return "ok"
+
+    with (
+        patch.object(bot, "_get_cached_token", return_value="token"),
+        patch.object(bot, "_reply", return_value=True) as mock_reply,
+        patch.object(bot, "handle_message", side_effect=slow),
+    ):
+        started = time.time()
+        resp = bot.app.test_client().post(
+            "/webhook", data=body, content_type="application/json",
+            headers={"X-Line-Signature": sig},
+        )
+        elapsed = time.time() - started
+
+    assert resp.status_code == 200
+    # 三則都必須回覆，且各自配對到自己的 replyToken
+    assert sorted(c[0][0] for c in mock_reply.call_args_list) == ["r0", "r1", "r2"]
+    # 序列會是 1.2s；並行應該接近 0.4s（門檻放寬避免 CI 抖動）
+    assert elapsed < 0.9, f"events 看起來仍是序列處理（{elapsed:.2f}s）"
+
+
+def test_webhook_one_failing_event_does_not_silence_the_others(monkeypatch):
+    """單一 event 炸掉不可吃掉同批其他 event 的回覆。"""
+    monkeypatch.setenv("LINE_CHANNEL_ID", "id")
+    monkeypatch.setenv("LINE_CHANNEL_SECRET", "secret")
+    body, sig = _signed_body([_text_event("炸", "r0"), _text_event("說明", "r1")])
+
+    def boom(text, **kwargs):
+        if text == "炸":
+            raise RuntimeError("boom")
+        return "ok"
+
+    with (
+        patch.object(bot, "_get_cached_token", return_value="token"),
+        patch.object(bot, "_reply", return_value=True) as mock_reply,
+        patch.object(bot, "handle_message", side_effect=boom),
+    ):
+        resp = bot.app.test_client().post(
+            "/webhook", data=body, content_type="application/json",
+            headers={"X-Line-Signature": sig},
+        )
+
+    assert resp.status_code == 200
+    replies = {c[0][0]: c[0][1] for c in mock_reply.call_args_list}
+    assert replies["r1"] == "ok"
+    assert "錯誤" in replies["r0"]

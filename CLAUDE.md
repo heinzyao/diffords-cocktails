@@ -43,7 +43,10 @@ The bot runs under gunicorn with **`--workers 1`, deliberately**. `_scrape_state
 in-process state — extra workers each get their own copy, which would silently defeat
 the lock and let two scrapers write the same SQLite blob. Scale with `--threads`
 (same process, so the lock still holds), never with `--workers`. Real horizontal
-scaling requires moving that state to shared storage first.
+scaling requires moving that state to shared storage first. The `ThreadPoolExecutor`
+in `webhook()` is the same deal — same process, so it doesn't defeat the lock. It
+exists because LINE batches rapidly-sent messages into one request, and handling
+them serially made the later `replyToken`s expire before they were used.
 
 ### LLM features (bot only, always optional)
 

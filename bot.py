@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -771,6 +772,34 @@ def health():
     return {"status": "ok", "service": "diffords-cocktails"}, 200
 
 
+def _handle_event(event: dict[str, Any], access_token: str) -> None:
+    """處理單一 message event 並回覆。
+
+    例外絕對不可逸出：這會在 executor 裡跑，漏出去的話那一則只會靜默沒回覆，
+    而且看不到 traceback。
+    """
+    if event.get("type") != "message":
+        return
+    message = event.get("message") or {}
+    if message.get("type") != "text":
+        return
+    reply_token = event.get("replyToken")
+    if not reply_token:
+        return
+    text = message.get("text") or ""
+    # 指令文法是自由輸入，解析路徑比舊的固定 regex 寬得多。少了這層保險，
+    # 任何未預期的例外都會讓使用者只收到沉默。
+    try:
+        reply = handle_message(text, user_id=(event.get("source") or {}).get("userId"))
+    except Exception:
+        logger.exception("handle_message 失敗：%r", text)
+        reply = "⚠️ 處理指令時發生未預期的錯誤，請稍後再試或輸入「說明」查看可用指令。"
+    try:
+        _reply(reply_token, reply, access_token)
+    except Exception:
+        logger.exception("回覆失敗：%r", text)
+
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     channel_id = os.getenv("LINE_CHANNEL_ID", "")
@@ -788,24 +817,18 @@ def webhook():
     if not token:
         abort(500)
 
-    for event in payload.get("events", []):
-        if event.get("type") != "message":
-            continue
-        message = event.get("message") or {}
-        if message.get("type") != "text":
-            continue
-        reply_token = event.get("replyToken")
-        if not reply_token:
-            continue
-        text = message.get("text") or ""
-        # 指令文法是自由輸入，解析路徑比舊的固定 regex 寬得多。少了這層保險，
-        # 任何未預期的例外都會炸穿 Flask handler，使用者只會收到沉默。
-        try:
-            reply = handle_message(text, user_id=(event.get("source") or {}).get("userId"))
-        except Exception:
-            logger.exception("handle_message 失敗：%r", text)
-            reply = "⚠️ 處理指令時發生未預期的錯誤，請稍後再試或輸入「說明」查看可用指令。"
-        _reply(reply_token, reply, token)
+    events = payload.get("events", [])
+    if len(events) == 1:
+        _handle_event(events[0], token)
+    elif events:
+        # LINE 會把連打的訊息打包成一個 request。序列處理 N 則就是 N×2 秒，
+        # 而 replyToken 約 60 秒過期 —— 後面幾則會來不及回而靜默失敗。
+        # 併發讓同一批共用一個等待視窗，而不是排隊累加。
+        # ponytail: 4 條夠用（gunicorn 本身已有 --threads 8）；真要削掉這 2 秒的
+        # 回應時間得改成先回 200 再背景處理，那需要 Cloud Run 關掉 CPU 節流。
+        with ThreadPoolExecutor(max_workers=min(len(events), 4)) as pool:
+            for event in events:
+                pool.submit(_handle_event, event, token)
 
     return "OK", 200
 
