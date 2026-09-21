@@ -46,6 +46,11 @@ _scrape_state: dict[str, Any] = {"running": False, "mode": None, "started_at": N
 _db_gcs_checked: dict[str, float] = {}
 _DB_GCS_CHECK_INTERVAL = 300
 
+_NLP_RATE_LIMIT = 10
+_NLP_RATE_WINDOW = 60.0
+_nlp_calls: dict[str, tuple[float, int]] = {}
+_nlp_rate_lock = threading.Lock()
+
 
 def _get_cached_token(channel_id: str, channel_secret: str) -> str | None:
     now = time.time()
@@ -74,6 +79,34 @@ def _is_admin(user_id: str | None) -> bool:
     """
     admin = os.getenv("LINE_USER_ID", "")
     return bool(admin) and user_id == admin
+
+
+def _nlp_rate_ok(user_id: str | None) -> bool:
+    """每人每分鐘最多 _NLP_RATE_LIMIT 次 LLM 呼叫，超過回 False。
+
+    Gemini 配額綁的是 GCP 專案而非 API key，而這把 key 與 cat-lendar 共用同一個
+    專案 —— 這個 bot 被朋友打爆時，那邊會一起沒配額。既有指令不走這條路，
+    被擋的人改用「說明」裡的指令仍可無限查詢。
+
+    ponytail: 計數是行程內的，max-instances 2 之下實際上限是兩倍；
+    要精確就得把計數挪到 Firestore/Redis，目前的量級不值得。
+    """
+    now = time.time()
+    key = user_id or ""
+    with _nlp_rate_lock:
+        # ponytail: 固定視窗計數，視窗交界最多放行兩倍額度；要嚴格就換 sliding window
+        start, count = _nlp_calls.get(key, (0.0, 0))
+        if now - start >= _NLP_RATE_WINDOW:
+            start, count = now, 0
+        if count >= _NLP_RATE_LIMIT:
+            return False
+        _nlp_calls[key] = (start, count + 1)
+        # ponytail: 順手回收過期條目，省掉一個背景 GC 執行緒
+        if len(_nlp_calls) > 500:
+            for k, (s, _) in list(_nlp_calls.items()):
+                if now - s >= _NLP_RATE_WINDOW:
+                    del _nlp_calls[k]
+        return True
 
 
 def _reply(reply_token: str, text: str, access_token: str) -> bool:
@@ -709,6 +742,11 @@ def handle_message(
     # 舊指令都沒命中 —— 交給 Gemini 試著解析成查詢條件。
     # 這是純加分路徑：解析不出來（或沒設 GEMINI_API_KEY）就照舊回提示。
     if command == "unknown":
+        if not _nlp_rate_ok(user_id):
+            return (
+                "⏳ 你問得太快了，等一分鐘再試 —— "
+                "或直接用「說明」裡的指令查詢，那些不限次數。"
+            )
         nl_args = nlp.parse_query(args[0])
         if nl_args:
             logger.info("自然語言查詢：%r → %s", args[0], nl_args)

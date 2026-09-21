@@ -477,3 +477,46 @@ def test_webhook_passes_user_id(monkeypatch):
 
     assert resp.status_code == 200
     assert mock_handle.call_args.kwargs["user_id"] == "Uxyz"
+
+
+def test_nlp_rate_limit_blocks_burst(monkeypatch):
+    """LLM 呼叫超過上限要擋下來 —— Gemini 配額與 cat-lendar 共用，這裡不擋那邊會掛。"""
+    monkeypatch.setattr(bot, "_NLP_RATE_LIMIT", 2)
+    bot._nlp_calls.clear()
+
+    with patch.object(bot.nlp, "parse_query", return_value=None) as parse:
+        for _ in range(2):
+            bot.handle_message("睡前喝的", user_id="Ualice")
+        assert parse.call_count == 2
+
+        blocked = bot.handle_message("睡前喝的", user_id="Ualice")
+        assert "太快" in blocked
+        assert parse.call_count == 2, "被擋下時不可再打 API"
+
+        # 額度是分人算的，Alice 用完不影響 Bob
+        bot.handle_message("睡前喝的", user_id="Ubob")
+        assert parse.call_count == 3
+
+
+def test_nlp_rate_limit_resets_after_window(monkeypatch):
+    monkeypatch.setattr(bot, "_NLP_RATE_LIMIT", 1)
+    bot._nlp_calls.clear()
+
+    with patch.object(bot.nlp, "parse_query", return_value=None) as parse:
+        bot.handle_message("睡前喝的", user_id="Ualice")
+        assert "太快" in bot.handle_message("睡前喝的", user_id="Ualice")
+
+        # 視窗過期後額度回復
+        start, count = bot._nlp_calls["Ualice"]
+        bot._nlp_calls["Ualice"] = (start - bot._NLP_RATE_WINDOW - 1, count)
+        bot.handle_message("睡前喝的", user_id="Ualice")
+        assert parse.call_count == 2
+
+
+def test_known_commands_bypass_rate_limit(monkeypatch):
+    """已知指令不打 LLM，不該消耗額度，也不該被擋。"""
+    monkeypatch.setattr(bot, "_NLP_RATE_LIMIT", 0)
+    bot._nlp_calls.clear()
+
+    assert "指令" in bot.handle_message("說明", user_id="Ualice")
+    assert bot._nlp_calls == {}

@@ -63,6 +63,11 @@ Both return `None` when `GEMINI_API_KEY` is unset, the call times out, or nothin
 usable comes back — **keep that contract**. Deployment mounts the key on the bot
 service only (the scraper does no NLP). Note Gemini rejects deadlines under 10s.
 
+The `unknown` branch is rate-limited per LINE user (`_nlp_rate_ok`, 10/min). Gemini
+quota is scoped to the **GCP project, not the API key**, and this project's key is
+shared with cat-lendar — a second key would not isolate anything. Without the limit,
+whoever this bot is shared with can exhaust cat-lendar's quota too.
+
 ### Scrape flow (the core logic)
 1. `scraper.parse_sitemap()` reads `SITEMAP_URL` → list of URLs + `lastmod`.
 2. Incremental skip (`_should_skip`): compare sitemap `lastmod` against DB's per-URL `lastmod` map (`storage.get_url_lastmod_map()`). sitemap `lastmod` ≤ DB `lastmod` → skip; no `lastmod` in sitemap → skip conservatively. This is why incremental runs are cheap — don't break the `lastmod` round-trip.
