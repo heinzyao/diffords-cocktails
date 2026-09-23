@@ -123,9 +123,7 @@ tag 必須從下列清單原字照抄（精確比對，自創的值會查到零�
 形容詞在資料庫裡沒有對應欄位，要靠語意比對酒譜的品飲評語。
 可以和其他條件並存：「琴酒做的、苦苦的」→ ingredient="gin" 且
 semantic_query="苦苦的"。純粹是分類或數值的條件（材料、評分、標籤、
-酒精濃度、甜酸）不要放進 semantic_query。
-
-只輸出 JSON，不要任何說明文字。"""
+酒精濃度、甜酸）不要放進 semantic_query。"""
 
 
 def _clean_text(value: Any) -> Optional[str]:
