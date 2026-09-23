@@ -817,7 +817,13 @@ def webhook():
     if not token:
         abort(500)
 
-    events = payload.get("events", [])
+    # 重送事件的 replyToken 早就失效，處理了只會拿到 400 Invalid reply token，
+    # 卻照樣燒掉一次 Gemini + embedding。冷啟動（min-instances 0 + 從 GCS 拉
+    # 21MB diffords.db）容易讓 LINE 等不到 200 而重送，所以直接丟掉。
+    events = [
+        e for e in payload.get("events", [])
+        if not e.get("deliveryContext", {}).get("isRedelivery")
+    ]
     if len(events) == 1:
         _handle_event(events[0], token)
     elif events:

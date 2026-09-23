@@ -571,6 +571,32 @@ def test_webhook_handles_batched_events_concurrently(monkeypatch):
     assert elapsed < 0.9, f"events 看起來仍是序列處理（{elapsed:.2f}s）"
 
 
+def test_webhook_drops_redelivered_events(monkeypatch):
+    """重送事件的 replyToken 已失效，處理了只會白燒一次 Gemini —— 直接丟掉。"""
+    monkeypatch.setenv("LINE_CHANNEL_ID", "id")
+    monkeypatch.setenv("LINE_CHANNEL_SECRET", "secret")
+    stale = _text_event("琴酒做的、苦苦的", "r-stale")
+    stale["deliveryContext"] = {"isRedelivery": True}
+    fresh = _text_event("說明", "r-fresh")
+    fresh["deliveryContext"] = {"isRedelivery": False}
+    body, sig = _signed_body([stale, fresh])
+
+    with (
+        patch.object(bot, "_get_cached_token", return_value="token"),
+        patch.object(bot, "_reply", return_value=True) as mock_reply,
+        patch.object(bot, "handle_message", return_value="ok") as mock_handle,
+    ):
+        resp = bot.app.test_client().post(
+            "/webhook", data=body, content_type="application/json",
+            headers={"X-Line-Signature": sig},
+        )
+
+    assert resp.status_code == 200
+    # 重送那則完全不該進到處理層（否則就是白付一次 LLM 費用）
+    assert mock_handle.call_count == 1
+    assert [c[0][0] for c in mock_reply.call_args_list] == ["r-fresh"]
+
+
 def test_webhook_one_failing_event_does_not_silence_the_others(monkeypatch):
     """單一 event 炸掉不可吃掉同批其他 event 的回覆。"""
     monkeypatch.setenv("LINE_CHANNEL_ID", "id")
