@@ -52,21 +52,45 @@ _RANGE_KEYS: dict[str, tuple[float, float]] = {
 }
 _LIMIT_MAX = 20
 
+# 每個 key 自帶中文，不用「位置對應」的散文描述整個 tuple —— 2026-09-20 加
+# sweet_sour 排序鍵時，prompt 裡那句「分別是…」就是這樣整排錯位的（模型被
+# 告知 sweet_sour 是卡路里），而且不會報錯。assert 讓下次加鍵時直接炸在 import。
+_SORT_LABELS = {
+    "rating": "評分",
+    "abv": "酒精濃度",
+    "sweet_sour": "甜酸",
+    "calories": "卡路里",
+    "date": "發布日期",
+    "name": "名稱",
+    "count": "評分人數",
+}
+assert set(_SORT_LABELS) == set(SORT_KEYS), (
+    f"sort 標籤與 SORT_KEYS 不同步：{set(SORT_KEYS) ^ set(_SORT_LABELS)}"
+)
+_SORT_DESC = "、".join(f"{k}={v}" for k, v in _SORT_LABELS.items())
+
 _RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
         "keyword": {"type": "string", "description": "酒名關鍵字（英文）"},
         "description": {"type": "string", "description": "描述關鍵字（英文）"},
         "ingredient": {"type": "string", "description": "食材，英文單數，如 gin、rum"},
-        "tag": {"type": "string", "description": "標籤，如 Classic/vintage、Summer"},
+        "tag": {"type": "string",
+                "description": "標籤。精確比對，必須從 system prompt 的清單原字照抄；"
+                               "自創或近似的值會查到零筆，寧可省略"},
         "min_rating": {"type": "number", "description": "最低評分 0-5"},
         "max_rating": {"type": "number", "description": "最高評分 0-5"},
         "min_abv": {"type": "number", "description": "最低酒精濃度 %"},
         "max_abv": {"type": "number", "description": "最高酒精濃度 %"},
-        "min_count": {"type": "integer", "description": "最低評分人數"},
-        "min_sweet_sour": {"type": "integer", "description": "甜酸下限 0-10"},
-        "max_sweet_sour": {"type": "integer", "description": "甜酸上限 0-10"},
-        "sort": {"type": "string", "enum": list(SORT_KEYS)},
+        "min_count": {"type": "integer",
+                      "description": "最低評分人數。只在使用者明確要求「多人評價」"
+                                     "或「熱門」時才給；設了會濾掉大量低票數酒譜"},
+        "min_sweet_sour": {"type": "integer",
+                           "description": "甜酸下限 0-10；數值越高越酸/乾，越低越甜"},
+        "max_sweet_sour": {"type": "integer",
+                           "description": "甜酸上限 0-10；數值越高越酸/乾，越低越甜"},
+        "sort": {"type": "string", "enum": list(SORT_KEYS),
+                 "description": f"排序依據：{_SORT_DESC}"},
         "desc": {"type": "boolean", "description": "true 為降序（預設）"},
         "limit": {"type": "integer", "description": f"筆數 1-{_LIMIT_MAX}"},
         "semantic_query": {
@@ -99,9 +123,6 @@ _SYSTEM_PROMPT = f"""你把使用者的中文雞尾酒查詢轉成資料庫查�
 資料庫內容全是英文：酒名、食材、標籤都是英文。使用者用中文問，
 你要輸出對應的英文查詢值。例如「琴酒」→ ingredient: "gin"、
 「蘭姆酒」→ "rum"、「威士忌」→ "whiskey"、「龍舌蘭」→ "tequila"。
-
-可用的 sort 值：{", ".join(SORT_KEYS)}（分別是評分、酒精濃度、卡路里、
-發布日期、名稱、評分人數）。
 
 tag 必須從下列清單原字照抄（精確比對，自創的值會查到零筆）。
 挑不到合適的就不要輸出 tag：
