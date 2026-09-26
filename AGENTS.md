@@ -1,6 +1,6 @@
 # Collaboration Notes
 
-This repository is now centered on Difford's Guide cocktail recipes.
+This repository is centered on Difford's Guide cocktail recipes.
 
 Current scope:
 - Scrape Difford's Guide cocktail recipe pages from the public cocktail sitemap.
@@ -9,6 +9,7 @@ Current scope:
 - Deploy one Cloud Run Job for scraping and one Cloud Run Service for the bot.
 
 Out of scope:
-- Legacy spirit-review scraping.
-- Spirit reviews, flavor profiles, and Selenium/Chrome automation.
+- Scraping spirit (bottle) review pages — only cocktail recipe pages are scraped.
+  A recipe's own Flavour Profile and `review` text are in scope (flavour search uses them).
+- Selenium/Chrome automation.
 - Cross-query recommendations based on a user's owned spirits.

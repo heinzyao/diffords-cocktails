@@ -88,11 +88,10 @@ whoever this bot is shared with can exhaust cat-lendar's quota too.
 Two Cloud Run resources, one bucket:
 
 - Service `diffords-cocktails-bot` — the LINE bot. Deployed by `.github/workflows/deploy.yml` on push to main.
-  Runs with `--min-instances 0`. It was briefly 1 (2026-09-21) to hide the cold start:
-  a cold start downloads the 21 MB `diffords.db` from GCS, making the first real query
-  6-7s against 1.7s warm (note `說明` never touches the DB, so it warms nothing — don't
-  use it as a latency baseline). Reverted the same day because a permanently billed idle
-  instance is ~USD 9.7/month at 1 vCPU + 512Mi, and the bot is single-user for now.
+  Runs with `--min-instances 0` because the bot is single-user and an always-on instance
+  costs ~USD 9.7/month (1 vCPU + 512Mi). The trade-off: a cold start downloads the 21 MB
+  `diffords.db` from GCS, so the first real query takes 6-7s against 1.7s warm (`說明`
+  never touches the DB, so it warms nothing — don't use it as a latency baseline).
   **Set it back to 1 if the bot is ever shared** — that 6-7s lands on whoever queries
   first after each scale-to-zero.
 - Job `diffords-cocktails-scraper` — the scraper. Also deployed by the same workflow; triggered on demand by the bot (`DIFFORDS_JOB_NAME`).
