@@ -622,3 +622,32 @@ def test_webhook_one_failing_event_does_not_silence_the_others(monkeypatch):
     replies = {c[0][0]: c[0][1] for c in mock_reply.call_args_list}
     assert replies["r1"] == "ok"
     assert "錯誤" in replies["r0"]
+
+
+def test_concurrent_cold_start_downloads_db_once(monkeypatch, tmp_path):
+    """同一批併發訊息在冷啟動時只能下載一次 DB。"""
+    import threading
+    from pathlib import Path
+
+    monkeypatch.setattr(bot, "GCS_BUCKET", "bucket")
+    monkeypatch.setattr(bot, "_db_gcs_checked", {})
+    db_path = tmp_path / "diffords.db"
+    calls = []
+
+    def slow_download(bucket, blob, path):
+        calls.append(path)
+        time.sleep(0.05)
+        Path(path).touch()
+        return True
+
+    with patch("diffords_guide.gcs_storage.download_db", side_effect=slow_download):
+        threads = [
+            threading.Thread(target=bot._ensure_db_from_gcs, args=(str(db_path),))
+            for _ in range(4)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+    assert len(calls) == 1

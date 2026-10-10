@@ -45,6 +45,7 @@ _token_cache: dict[str, str | float] = {}
 _scrape_lock = threading.Lock()
 _scrape_state: dict[str, Any] = {"running": False, "mode": None, "started_at": None}
 _db_gcs_checked: dict[str, float] = {}
+_db_gcs_lock = threading.Lock()
 _DB_GCS_CHECK_INTERVAL = 300
 
 _NLP_RATE_LIMIT = 10
@@ -135,6 +136,14 @@ def _reply(reply_token: str, text: str, access_token: str) -> bool:
 def _ensure_db_from_gcs(db_path: str, blob_name: str = GCS_DB_BLOB) -> bool:
     if not GCS_BUCKET:
         return Path(db_path).exists()
+    # 同一批訊息會併發處理（見 webhook）；不鎖的話冷啟動時每則各下載一次，
+    # 還會同時寫同一個檔案。
+    # ponytail: 全域鎖，每則訊息都會短暫排隊在這裡；檢查本身只是比時間戳，夠快
+    with _db_gcs_lock:
+        return _sync_db_from_gcs(db_path, blob_name)
+
+
+def _sync_db_from_gcs(db_path: str, blob_name: str) -> bool:
 
     from diffords_guide import gcs_storage
 
