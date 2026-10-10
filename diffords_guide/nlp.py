@@ -69,15 +69,33 @@ assert set(_SORT_LABELS) == set(SORT_KEYS), (
 )
 _SORT_DESC = "、".join(f"{k}={v}" for k, v in _SORT_LABELS.items())
 
+# tag 在 storage.query_cocktails() 是**精確比對**（LOWER(t.value) = LOWER(?)），
+# 猜一個近似值會查到零筆 —— 例如 "Sour" 查不到，實際分類叫 "Sours (citrus)"。
+# 所以把實際分類值給 Gemini 挑。這是 Difford's 的固定分類法，很少變動；
+# 下面列的是出現 100 次以上的分類，更新方式：
+#   sqlite3 diffords.db "SELECT value FROM cocktails, json_each(cocktails.tags)
+#     GROUP BY value HAVING count(*) >= 100 ORDER BY count(*) DESC;"
+_KNOWN_TAGS = (
+    "Aperitivo/aperitif", "Spirit-forward", "Nightcap/sipping", "Classic/vintage",
+    "Fruity (e.g. Pornstar Martini)", "Sours (citrus)", "Summer",
+    "After dinner/digestif", "Citrusy", "Bittersweet (e.g. Negroni)",
+    "Short and stirred", "Long drinks and highballs", "Herbal", "Anytime",
+    "Elevenses/afternoon", "Martini-style", "Hall of Fame and must know/try",
+    "Creamy (e.g. Dirty banana)", "Modern", "Dessert cocktails",
+    "Spicy (e.g. Spicy Fifty)", "Tiki/tropical", "Champagne", "Breakfast/brunch",
+    "Autumn/fall", "Shot cocktails", "Floral (e.g. Elderflower spritz)",
+    "Contemporary classic", "Savoury (e.g. Bloody Mary)",
+)
+
 _RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
         "keyword": {"type": "string", "description": "酒名關鍵字（英文）"},
         "description": {"type": "string", "description": "描述關鍵字（英文）"},
         "ingredient": {"type": "string", "description": "食材，英文單數，如 gin、rum"},
-        "tag": {"type": "string",
-                "description": "標籤。精確比對，必須從 system prompt 的清單原字照抄；"
-                               "自創或近似的值會查到零筆，寧可省略"},
+        # enum 在協議層擋掉自創值（精確比對，近似值會查到零筆）
+        "tag": {"type": "string", "enum": list(_KNOWN_TAGS),
+                "description": "分類標籤；挑不到合適的就省略"},
         "min_rating": {"type": "number", "description": "最低評分 0-5"},
         "max_rating": {"type": "number", "description": "最高評分 0-5"},
         "min_abv": {"type": "number", "description": "最低酒精濃度 %"},
@@ -100,33 +118,13 @@ _RESPONSE_SCHEMA = {
     },
 }
 
-# tag 在 storage.query_cocktails() 是**精確比對**（LOWER(t.value) = LOWER(?)），
-# 猜一個近似值會查到零筆 —— 例如 "Sour" 查不到，實際分類叫 "Sours (citrus)"。
-# 所以把實際分類值給 Gemini 挑。這是 Difford's 的固定分類法，很少變動；
-# 下面列的是出現 100 次以上的分類，更新方式：
-#   sqlite3 diffords.db "SELECT value FROM cocktails, json_each(cocktails.tags)
-#     GROUP BY value HAVING count(*) >= 100 ORDER BY count(*) DESC;"
-_KNOWN_TAGS = (
-    "Aperitivo/aperitif", "Spirit-forward", "Nightcap/sipping", "Classic/vintage",
-    "Fruity (e.g. Pornstar Martini)", "Sours (citrus)", "Summer",
-    "After dinner/digestif", "Citrusy", "Bittersweet (e.g. Negroni)",
-    "Short and stirred", "Long drinks and highballs", "Herbal", "Anytime",
-    "Elevenses/afternoon", "Martini-style", "Hall of Fame and must know/try",
-    "Creamy (e.g. Dirty banana)", "Modern", "Dessert cocktails",
-    "Spicy (e.g. Spicy Fifty)", "Tiki/tropical", "Champagne", "Breakfast/brunch",
-    "Autumn/fall", "Shot cocktails", "Floral (e.g. Elderflower spritz)",
-    "Contemporary classic", "Savoury (e.g. Bloody Mary)",
-)
-
 _SYSTEM_PROMPT = f"""你把使用者的中文雞尾酒查詢轉成資料庫查詢參數。
 
 資料庫內容全是英文：酒名、食材、標籤都是英文。使用者用中文問，
 你要輸出對應的英文查詢值。例如「琴酒」→ ingredient: "gin"、
 「蘭姆酒」→ "rum"、「威士忌」→ "whiskey"、「龍舌蘭」→ "tequila"。
 
-tag 必須從下列清單原字照抄（精確比對，自創的值會查到零筆）。
-挑不到合適的就不要輸出 tag：
-{chr(10).join("  " + t for t in _KNOWN_TAGS)}
+tag 的可選值由 schema 的 enum 限定；挑不到合適的就不要輸出 tag。
 
 判斷原則：
 - 只輸出你有把握的欄位。無法判斷的就省略，不要猜測或填預設值。
@@ -178,6 +176,10 @@ def sanitize(data: dict[str, Any]) -> dict[str, Any]:
         value = _clean_text(data.get(key))
         if value is not None:
             out[key] = value
+
+    # enum 已在協議層約束，這裡是第二道防線（mock、換模型、schema 被繞過）
+    if out.get("tag") not in _KNOWN_TAGS:
+        out.pop("tag", None)
 
     for key, (low, high) in _RANGE_KEYS.items():
         value = _clean_number(data.get(key), low, high)

@@ -137,3 +137,10 @@ def test_sanitize_handles_sweet_sour_axis():
     assert out == {"max_sweet_sour": 5, "min_sweet_sour": 2}
     assert all(isinstance(v, int) for v in out.values())
     assert "max_sweet_sour" not in nlp.sanitize({"max_sweet_sour": 11})
+
+
+def test_tag_limited_to_known_tags():
+    """tag 是精確比對，近似值（"Sour"）會查到零筆，必須丟棄。"""
+    assert nlp._RESPONSE_SCHEMA["properties"]["tag"]["enum"] == list(nlp._KNOWN_TAGS)
+    assert nlp.sanitize({"tag": "Sours (citrus)"})["tag"] == "Sours (citrus)"
+    assert "tag" not in nlp.sanitize({"tag": "Sour"})
