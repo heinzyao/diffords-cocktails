@@ -179,9 +179,7 @@ def _start_diffords(mode: str, db_path: str) -> None:
         logger.info("Cloud Run Job started: %s", name)
         # 遠端 job 在獨立容器執行，此 bot 實例無法追蹤其進度；立即清除本地狀態
         with _scrape_lock:
-            _scrape_state["running"] = False
-            _scrape_state["mode"] = None
-            _scrape_state["started_at"] = None
+            _scrape_state.update(running=False, mode=None, started_at=None)
         return
 
     cmd = [
@@ -199,9 +197,7 @@ def _start_diffords(mode: str, db_path: str) -> None:
             subprocess.run(cmd, capture_output=False, check=False)
         finally:
             with _scrape_lock:
-                _scrape_state["running"] = False
-                _scrape_state["mode"] = None
-                _scrape_state["started_at"] = None
+                _scrape_state.update(running=False, mode=None, started_at=None)
 
     threading.Thread(target=_run, daemon=True).start()
 
@@ -261,37 +257,25 @@ def fmt_cocktail_info(db_path: str, name: str) -> str:
     storage = _open_storage(db_path)
     if storage is None:
         return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
-    try:
+    with storage:
         cocktail = storage.get_cocktail_by_name(name)
-    finally:
-        storage.close()
     if not cocktail:
         return f"🔍 找不到符合「{name}」的雞尾酒，請檢查拼字或嘗試其他關鍵字！"
 
-    lines = []
-    lines.append(f"🍸 {cocktail['name']}")
-    lines.append("──────────────────")
+    lines = [f"🍸 {cocktail['name']}", "──────────────────"]
 
     # 基礎屬性
     rating = cocktail.get("rating_value")
     if rating not in (None, ""):
-        rating_count = cocktail.get("rating_count")
-        if rating_count:
-            lines.append(f"⭐ 評分：{rating:.1f} ★ ({rating_count} 票)")
-        else:
-            lines.append(f"⭐ 評分：{rating:.1f} ★")
-
-    abv = cocktail.get("abv")
-    if abv not in (None, ""):
-        lines.append(f"🔥 酒精濃度 (ABV)：{abv}%")
-
-    glass = cocktail.get("glassware")
-    if glass not in (None, ""):
-        lines.append(f"🥛 推薦杯型：{glass}")
-
-    garnish = cocktail.get("garnish")
-    if garnish not in (None, ""):
-        lines.append(f"🍊 推薦裝飾：{garnish}")
+        votes = cocktail.get("rating_count")
+        lines.append(f"⭐ 評分：{rating:.1f} ★" + (f" ({votes} 票)" if votes else ""))
+    for label, key, unit in (
+        ("🔥 酒精濃度 (ABV)", "abv", "%"),
+        ("🥛 推薦杯型", "glassware", ""),
+        ("🍊 推薦裝飾", "garnish", ""),
+    ):
+        if cocktail.get(key) not in (None, ""):
+            lines.append(f"{label}：{cocktail[key]}{unit}")
 
     # 準備步驟
     prepare = cocktail.get("prepare")
@@ -336,10 +320,8 @@ def fmt_cocktail_stats(db_path: str) -> str:
     storage = _open_storage(db_path)
     if storage is None:
         return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
-    try:
+    with storage:
         stats = storage.get_stats()
-    finally:
-        storage.close()
 
     total = stats.get("總雞尾酒數", 0)
     avg_rating = stats.get("平均評分", "N/A")
@@ -404,11 +386,10 @@ def _query_and_render(
     if storage is None:
         return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
     try:
-        rows = storage.query_cocktails(sort=sort, desc=desc, limit=limit, **active)
+        with storage:
+            rows = storage.query_cocktails(sort=sort, desc=desc, limit=limit, **active)
     except ValueError as exc:
         return f"⚠️ {exc}"
-    finally:
-        storage.close()
     if not rows:
         return empty
 
@@ -469,15 +450,13 @@ def fmt_semantic_search(
         return "⚠️ 資料庫尚未建立，請先啟動爬蟲任務。"
 
     candidate_ids = None
-    try:
+    with storage:
         if filters:
             # 候選放寬到 200，讓語意排序有足夠的挑選空間
             rows = storage.query_cocktails(**{**filters, "limit": 200})
             candidate_ids = [r["id"] for r in rows]
             if not candidate_ids:
-                return f"🔍 沒有符合條件的雞尾酒，請放寬條件再試一次！"
-    finally:
-        storage.close()
+                return "🔍 沒有符合條件的雞尾酒，請放寬條件再試一次！"
 
     results = embeddings.search(
         db_path, query, limit=limit, candidate_ids=candidate_ids
@@ -727,16 +706,12 @@ def handle_message(
         with _scrape_lock:
             if _scrape_state["running"]:
                 return f"⚠️ Difford's Guide 爬蟲任務目前正在執行中（模式：{_scrape_state['mode']}）。請勿重複啟動。"
-            _scrape_state["running"] = True
-            _scrape_state["mode"] = mode
-            _scrape_state["started_at"] = time.time()
+            _scrape_state.update(running=True, mode=mode, started_at=time.time())
         try:
             _start_diffords(mode, db_path)
         except Exception as exc:
             with _scrape_lock:
-                _scrape_state["running"] = False
-                _scrape_state["mode"] = None
-                _scrape_state["started_at"] = None
+                _scrape_state.update(running=False, mode=None, started_at=None)
             logger.exception("Failed to start scraper")
             return f"❌ Difford's Guide 爬蟲任務啟動失敗：{exc}"
         return f"🚀 Difford's Guide 爬蟲任務已成功啟動（模式：{mode}）！"
@@ -824,9 +799,7 @@ def webhook():
         e for e in payload.get("events", [])
         if not e.get("deliveryContext", {}).get("isRedelivery")
     ]
-    if len(events) == 1:
-        _handle_event(events[0], token)
-    elif events:
+    if events:
         # LINE 會把連打的訊息打包成一個 request。序列處理 N 則就是 N×2 秒，
         # 而 replyToken 約 60 秒過期 —— 後面幾則會來不及回而靜默失敗。
         # 併發讓同一批共用一個等待視窗，而不是排隊累加。

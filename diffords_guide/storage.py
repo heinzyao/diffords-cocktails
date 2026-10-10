@@ -88,21 +88,12 @@ _SORT_COLUMNS = {
 SORT_KEYS = tuple(_SORT_COLUMNS)
 
 
-# 欄位轉型輔助
-def _to_real(value) -> Optional[float]:
+# 欄位轉型輔助：空值或轉型失敗一律回 None
+def _to(cast, value):
     if value in (None, ""):
         return None
     try:
-        return float(value)
-    except (ValueError, TypeError):
-        return None
-
-
-def _to_int(value) -> Optional[int]:
-    if value in (None, ""):
-        return None
-    try:
-        return int(value)
+        return cast(value)
     except (ValueError, TypeError):
         return None
 
@@ -188,52 +179,40 @@ class DiffordsStorage:
         （description/tags/rating…）穩定有值，維持直接覆寫以便更新。
         """
         row = self._prepare_row(data)
-        existing = cur.execute(
-            "SELECT id FROM cocktails WHERE id = ?", (row["id"],)
-        ).fetchone()
-
-        if existing:
-            cocktail_id = existing[0]
-            cur.execute(
-                """
-                UPDATE cocktails SET
-                    name=:name, slug=:slug, description=:description,
-                    glassware=COALESCE(:glassware, glassware),
-                    garnish=COALESCE(:garnish, garnish),
-                    prepare=COALESCE(:prepare, prepare),
-                    instructions=COALESCE(:instructions, instructions),
-                    review=COALESCE(:review, review),
-                    history=COALESCE(:history, history),
-                    abv=COALESCE(:abv, abv),
-                    strength=COALESCE(:strength, strength),
-                    sweet_sour=COALESCE(:sweet_sour, sweet_sour),
-                    tags=:tags, rating_value=:rating_value, rating_count=:rating_count,
-                    calories=:calories, prep_time_min=:prep_time_min,
-                    date_published=:date_published, url=:url, lastmod=:lastmod,
-                    scraped_at=CURRENT_TIMESTAMP
-                WHERE id=:id
-            """,
-                row,
-            )
-        else:
-            cur.execute(
-                """
-                INSERT INTO cocktails
-                    (id, name, slug, description, glassware, garnish, prepare,
-                     instructions, review, history, tags, rating_value, rating_count,
-                     calories, prep_time_min, abv, strength, sweet_sour,
-                     date_published, url, lastmod)
-                VALUES
-                    (:id, :name, :slug, :description, :glassware, :garnish, :prepare,
-                     :instructions, :review, :history, :tags, :rating_value, :rating_count,
-                     :calories, :prep_time_min, :abv, :strength, :sweet_sour,
-                     :date_published, :url, :lastmod)
-            """,
-                row,
-            )
-            cocktail_id = cur.lastrowid
-            if cocktail_id is None:
-                raise ValueError("Failed to insert cocktail row")
+        cur.execute(
+            """
+            INSERT INTO cocktails
+                (id, name, slug, description, glassware, garnish, prepare,
+                 instructions, review, history, tags, rating_value, rating_count,
+                 calories, prep_time_min, abv, strength, sweet_sour,
+                 date_published, url, lastmod)
+            VALUES
+                (:id, :name, :slug, :description, :glassware, :garnish, :prepare,
+                 :instructions, :review, :history, :tags, :rating_value, :rating_count,
+                 :calories, :prep_time_min, :abv, :strength, :sweet_sour,
+                 :date_published, :url, :lastmod)
+            ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name, slug=excluded.slug, description=excluded.description,
+                glassware=COALESCE(excluded.glassware, glassware),
+                garnish=COALESCE(excluded.garnish, garnish),
+                prepare=COALESCE(excluded.prepare, prepare),
+                instructions=COALESCE(excluded.instructions, instructions),
+                review=COALESCE(excluded.review, review),
+                history=COALESCE(excluded.history, history),
+                abv=COALESCE(excluded.abv, abv),
+                strength=COALESCE(excluded.strength, strength),
+                sweet_sour=COALESCE(excluded.sweet_sour, sweet_sour),
+                tags=excluded.tags, rating_value=excluded.rating_value,
+                rating_count=excluded.rating_count, calories=excluded.calories,
+                prep_time_min=excluded.prep_time_min,
+                date_published=excluded.date_published, url=excluded.url,
+                lastmod=excluded.lastmod, scraped_at=CURRENT_TIMESTAMP
+        """,
+            row,
+        )
+        cocktail_id = row["id"] if row["id"] is not None else cur.lastrowid
+        if cocktail_id is None:
+            raise ValueError("Failed to insert cocktail row")
         return cocktail_id
 
     def _save_ingredients(
@@ -287,13 +266,13 @@ class DiffordsStorage:
             "review": _to_text(data.get("review")),
             "history": _to_text(data.get("history")),
             "tags": json.dumps(tags, ensure_ascii=False) if tags else None,
-            "rating_value": _to_real(data.get("rating_value")),
-            "rating_count": _to_int(data.get("rating_count")),
-            "calories": _to_int(data.get("calories")),
-            "prep_time_min": _to_int(data.get("prep_time_minutes")),
-            "abv": _to_real(data.get("abv")),
-            "strength": _to_int(data.get("strength")),
-            "sweet_sour": _to_int(data.get("sweet_sour")),
+            "rating_value": _to(float, data.get("rating_value")),
+            "rating_count": _to(int, data.get("rating_count")),
+            "calories": _to(int, data.get("calories")),
+            "prep_time_min": _to(int, data.get("prep_time_minutes")),
+            "abv": _to(float, data.get("abv")),
+            "strength": _to(int, data.get("strength")),
+            "sweet_sour": _to(int, data.get("sweet_sour")),
             "date_published": _to_text(data.get("date_published")),
             "url": url,
             "lastmod": _to_text(data.get("lastmod")),
@@ -393,28 +372,20 @@ class DiffordsStorage:
                 " WHERE LOWER(t.value) = LOWER(?))"
             )
             params.append(tag.strip())
-        if min_rating is not None:
-            where.append("c.rating_value >= ?")
-            params.append(min_rating)
-        if max_rating is not None:
-            where.append("c.rating_value <= ?")
-            params.append(max_rating)
-        if min_abv is not None:
-            where.append("c.abv >= ?")
-            params.append(min_abv)
-        if max_abv is not None:
-            where.append("c.abv <= ?")
-            params.append(max_abv)
-        if min_count is not None:
-            where.append("c.rating_count >= ?")
-            params.append(min_count)
-        # sweet_sour 0-10，數值越高越偏酸/乾（甜點調酒約 4-5、Sours 約 7-8）
-        if min_sweet_sour is not None:
-            where.append("c.sweet_sour >= ?")
-            params.append(min_sweet_sour)
-        if max_sweet_sour is not None:
-            where.append("c.sweet_sour <= ?")
-            params.append(max_sweet_sour)
+        ranges = {
+            "c.rating_value >= ?": min_rating,
+            "c.rating_value <= ?": max_rating,
+            "c.abv >= ?": min_abv,
+            "c.abv <= ?": max_abv,
+            "c.rating_count >= ?": min_count,
+            # sweet_sour 0-10，數值越高越偏酸/乾（甜點調酒約 4-5、Sours 約 7-8）
+            "c.sweet_sour >= ?": min_sweet_sour,
+            "c.sweet_sour <= ?": max_sweet_sour,
+        }
+        for cond, value in ranges.items():
+            if value is not None:
+                where.append(cond)
+                params.append(value)
 
         clause = f"WHERE {' AND '.join(where)}" if where else ""
         column = _SORT_COLUMNS[sort]

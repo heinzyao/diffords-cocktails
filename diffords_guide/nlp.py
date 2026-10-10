@@ -223,12 +223,8 @@ def parse_query(text: str) -> Optional[dict[str, Any]]:
     if not api_key:
         return None
 
-    try:
-        from google import genai
-        from google.genai import types
-    except ImportError:
-        logger.warning("google-genai 未安裝，自然語言查詢停用")
-        return None
+    from google import genai
+    from google.genai import types
 
     model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
     timeout_ms = int(os.getenv("GEMINI_TIMEOUT_MS", DEFAULT_TIMEOUT_MS))

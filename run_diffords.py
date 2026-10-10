@@ -11,12 +11,11 @@ Difford's Guide 雞尾酒譜爬蟲執行腳本
 
 執行流程：
     1. GCS 下載 diffords.db（Cloud Run 環境）
-    2. 執行視窗保護：7 天內已成功執行則跳過
-    3. 解析 sitemap → 決定待爬 URL
-    4. 爬取雞尾酒詳情頁
-    5. 重建風味向量索引（--build-index，需 GEMINI_API_KEY）
-    6. GCS 上傳 diffords.db
-    7. LINE 通知（成功/失敗/跳過）
+    2. 解析 sitemap → 決定待爬 URL
+    3. 爬取雞尾酒詳情頁
+    4. 重建風味向量索引（--build-index，需 GEMINI_API_KEY）
+    5. GCS 上傳 diffords.db
+    6. LINE 通知（成功/失敗）
 """
 
 import argparse
@@ -69,7 +68,7 @@ def _do_notify(
     )
 
 
-def run(mode: str, db_path: str, notify_line: bool, args) -> tuple[bool, dict]:
+def run(mode: str, db_path: str) -> tuple[bool, dict]:
     """核心執行流程，回傳 (success, stats)。"""
     incremental = mode != "full"
     max_recipes = 10 if mode == "test" else None
@@ -155,7 +154,7 @@ def main():
     # ── 執行爬蟲 ─────────────────────────────────────────────────────
     _exc: Exception | None = None
     try:
-        success, stats = run(args.mode, args.db_path, args.notify_line, args)
+        success, stats = run(args.mode, args.db_path)
     except Exception as e:
         _exc = e
         success, stats = False, {}
@@ -206,21 +205,12 @@ def main():
         if not notifier.is_configured():
             print("⚠️  LINE 通知未設定（缺少憑證環境變數）")
         else:
-            def _notify():
-                return _do_notify(
-                    notifier,
-                    success,
-                    args.mode,
-                    stats,
-                    _exc,
-                    duration_secs,
-                )
-
-            ok = _notify()
+            notify_args = (notifier, success, args.mode, stats, _exc, duration_secs)
+            ok = _do_notify(*notify_args)
             if not ok:
                 print("⚠️  LINE 通知第一次失敗，30 秒後重試…")
                 time.sleep(30)
-                ok = _notify()
+                ok = _do_notify(*notify_args)
             label = "成功通知" if success else "失敗通知"
             print(f"📱 LINE {label}{'已發送' if ok else '發送失敗'}")
 

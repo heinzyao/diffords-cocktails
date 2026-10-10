@@ -270,3 +270,17 @@ def test_scraper_fetches_and_stores_recipe_without_network_sleep(tmp_path):
 
         assert ok is True
         assert storage.get_cocktail_by_name("Negroni")["url"] == entry.url
+
+
+def test_resave_keeps_html_fields_missing_from_new_scrape(tmp_path):
+    """upsert：新抓的 HTML 欄位是 None 時保留舊值，JSON-LD 欄位照常覆寫。"""
+    with DiffordsStorage(str(tmp_path / "d.db")) as storage:
+        storage.save_cocktail(_sample_cocktail())
+        rescraped = _sample_cocktail()
+        rescraped["glassware"] = None
+        rescraped["rating_value"] = 4.9
+        assert storage.save_cocktail(rescraped)
+        row = storage.get_cocktail_by_id(1254)
+    assert row["glassware"] == "Old Fashioned Glass"
+    assert row["rating_value"] == 4.9
+    assert [i["item"] for i in row["ingredients"]][1] == "Campari"

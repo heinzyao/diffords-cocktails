@@ -81,12 +81,8 @@ def embed_texts(texts: list[str], *, task_type: str) -> Optional[list[np.ndarray
     if not api_key:
         return None
 
-    try:
-        from google import genai
-        from google.genai import types
-    except ImportError:
-        logger.warning("google-genai 未安裝，語意檢索停用")
-        return None
+    from google import genai
+    from google.genai import types
 
     client = genai.Client(api_key=api_key)
     model = os.getenv("GEMINI_EMBED_MODEL", EMBED_MODEL)

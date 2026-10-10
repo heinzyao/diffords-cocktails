@@ -17,11 +17,8 @@ uv run python run_diffords.py --mode test         # scrape 10 recipes (smoke tes
 uv run python run_diffords.py --mode incremental  # default; lastmod-based update
 uv run python run_diffords.py --mode full         # re-scrape everything
 
-uv run python query.py stats
-uv run python query.py list --ingredient gin --rating 4.2 --sort abv --limit 15
-# 條件可疊加：--keyword --description --ingredient --tag --rating --max-rating
-#             --abv --max-abv --min-count --sweet-sour --max-sweet-sour
-# 排序：--sort {rating,abv,sweet_sour,calories,date,name,count} [--asc]
+uv run python query.py ask 雞尾酒統計               # same commands as the LINE bot
+uv run python query.py ask "雞尾酒列表 材料 gin 評分 4.2 排序 酒精濃度 15筆"
 
 uv run python query.py index                      # build/refresh flavour vector index
 uv run python query.py similar "smoky and bitter" # semantic search (needs index)

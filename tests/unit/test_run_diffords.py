@@ -15,7 +15,7 @@ def test_run_records_scrape_run(tmp_path):
         scraper.get_statistics.return_value = {"爬取新增": 1}
         scraper_cls.return_value = scraper
 
-        success, stats = run_diffords.run("test", str(db_path), False, MagicMock())
+        success, stats = run_diffords.run("test", str(db_path))
 
     assert success is True
     assert stats["爬取新增"] == 1

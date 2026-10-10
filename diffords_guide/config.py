@@ -32,7 +32,6 @@ _HEADERS = {
 
 # ── 資料庫設定 ──
 DIFFORDS_DB_DEFAULT = "diffords.db"
-DIFFORDS_DB_PATH = "diffords.db"
 
 # ── 通知設定 ──
 DIFFORDS_NOTIFY_SOURCE = "Difford's Guide"

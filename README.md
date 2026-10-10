@@ -63,12 +63,12 @@ Options:
 ### Query
 
 ```bash
-uv run python query.py stats
-uv run python query.py search negroni
-uv run python query.py info "Negroni"
-uv run python query.py list --ingredient gin --rating 4.2 --sort abv --limit 15
-uv run python query.py list --tag Classic/vintage --sort calories --asc
-uv run python query.py list --description citrus --sort date
+# same commands as the LINE bot (try "說明" for the full list)
+uv run python query.py ask 雞尾酒統計
+uv run python query.py ask "雞尾酒搜尋 negroni"
+uv run python query.py ask "雞尾酒酒譜 Negroni"
+uv run python query.py ask "雞尾酒列表 材料 gin 評分 4.2 排序 酒精濃度 15筆"
+uv run python query.py similar "smoky and bitter"
 ```
 
 ### LINE Bot
@@ -165,17 +165,18 @@ uv run pytest
 ```bash
 uv sync
 uv run python run_diffords.py --mode test
-uv run python query.py search negroni
+uv run python query.py ask "雞尾酒搜尋 negroni"
 uv run python bot.py
 ```
 
 ### CLI 範例
 
 ```bash
-uv run python query.py stats
-uv run python query.py info "Negroni"
-uv run python query.py list --ingredient gin --rating 4.2 --sort abv
-uv run python query.py list --tag Classic/vintage --sort calories --asc
+# 與 LINE bot 同一套指令（輸入「說明」看全部）
+uv run python query.py ask 雞尾酒統計
+uv run python query.py ask "雞尾酒酒譜 Negroni"
+uv run python query.py ask "雞尾酒列表 材料 gin 評分 4.2 排序 酒精濃度"
+uv run python query.py ask "雞尾酒列表 標籤 Classic/vintage 排序 卡路里 升序"
 ```
 
 ### LINE Bot 指令
