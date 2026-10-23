@@ -96,7 +96,7 @@ Supported message commands:
 | `雞尾酒列表 排序 <key> [升序\|降序]` | Sort by 評分/酒精濃度/甜酸/卡路里/日期/名稱/評分數 |
 | `雞尾酒統計` | Show database stats |
 | `雞尾酒爬蟲 <test\|incremental\|full>` | Trigger scraper |
-| `狀態` | Show scraper status |
+| `狀態` | Show the cocktail DB scraper status |
 | `說明` / `help` | Show help (same as `雞尾酒說明`; the admin's 1:1 chat gets a short overview instead) |
 | `雞尾酒說明` / `cocktail help` | Full cocktail command help |
 
@@ -216,7 +216,7 @@ uv run python query.py ask "雞尾酒列表 標籤 Classic/vintage 排序 卡路
 | `雞尾酒列表 排序 <依據> [升序\|降序]` | 依 評分／酒精濃度／甜酸／卡路里／日期／名稱／評分數 排序 |
 | `雞尾酒統計` | 顯示資料庫摘要 |
 | `雞尾酒爬蟲 <test\|incremental\|full>` | 啟動爬蟲 |
-| `狀態` | 查看爬蟲狀態 |
+| `狀態` | 查看雞尾酒資料庫爬蟲狀態 |
 | `說明` / `help` | 顯示指令（等同 `雞尾酒說明`；管理員 1:1 聊天改為簡短總覽）|
 | `雞尾酒說明` / `cocktail help` | 完整雞尾酒指令說明 |
 

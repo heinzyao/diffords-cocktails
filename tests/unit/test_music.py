@@ -68,6 +68,8 @@ def test_help_split_by_identity_and_chat():
     overview = bot.handle_message("說明", user_id=ADMIN)
     assert "「雞尾酒說明」" in overview and "「音樂說明」" in overview and "狀態" in overview
     assert "雞尾酒列表" not in overview and "音樂推薦 <" not in overview
+    # 總覽涵蓋兩個主題，標題不能再掛雞尾酒來源的名字
+    assert overview.startswith("🤖 助理指令總覽") and "Difford" not in overview
     assert bot.handle_message("雞尾酒說明", user_id=ADMIN) == cocktail
     music = bot.handle_message("音樂說明", user_id=ADMIN)
     assert music == bot.handle_message("music help", user_id=ADMIN)
