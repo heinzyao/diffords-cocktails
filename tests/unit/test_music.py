@@ -47,7 +47,7 @@ def test_parse_music_commands_for_admin():
 
 @pytest.mark.parametrize("text", [
     "音樂推薦 下雨天的爵士", "音樂預覽 下雨天的爵士", "音樂口味更新", "音樂狀態",
-    "音樂推薦", "音樂推薦 " + "a" * 301,
+    "音樂推薦", "音樂推薦 " + "a" * 301, "音樂說明", "music help",
 ])
 def test_non_admin_music_is_indistinguishable_from_unknown(text, service):
     assert bot.parse_command(text) == ("unknown", [text.strip()])
@@ -57,9 +57,30 @@ def test_non_admin_music_is_indistinguishable_from_unknown(text, service):
     service[1].assert_not_called()
 
 
-def test_help_shows_music_only_to_admin():
-    assert "音樂" not in bot.handle_message("說明", user_id="Ustranger")
-    assert "音樂推薦" in bot.handle_message("說明", user_id=ADMIN)
+def test_help_split_by_identity_and_chat():
+    cocktail = bot.handle_message("雞尾酒說明", user_id="Ustranger")
+    assert cocktail.startswith("🍹 Difford's Guide 雞尾酒助理指令") and "音樂" not in cocktail
+    # 非管理員、或管理員在群組：「說明」維持原樣 = 雞尾酒說明，不提音樂
+    for uid, private in (("Ustranger", True), (None, True), ("Ustranger", False), (ADMIN, False)):
+        for cmd in ("說明", "help", "指令", "雞尾酒說明", "cocktail help"):
+            assert bot.handle_message(cmd, user_id=uid, private=private) == cocktail
+    # 管理員 1:1：總覽指向兩份說明，本身不列細項
+    overview = bot.handle_message("說明", user_id=ADMIN)
+    assert "「雞尾酒說明」" in overview and "「音樂說明」" in overview and "狀態" in overview
+    assert "雞尾酒列表" not in overview and "音樂推薦 <" not in overview
+    assert bot.handle_message("雞尾酒說明", user_id=ADMIN) == cocktail
+    music = bot.handle_message("音樂說明", user_id=ADMIN)
+    assert music == bot.handle_message("music help", user_id=ADMIN)
+    for cmd in ("音樂推薦", "音樂預覽", "音樂口味更新", "音樂狀態"):
+        assert f"例：{cmd}" in music
+    assert "推薦約需 1 分鐘，超過時會先回覆再推播結果" in music
+
+
+def test_admin_music_help_in_group_is_unknown():
+    with patch.object(bot.nlp, "parse_query", return_value=None):
+        assert bot.handle_message("音樂說明", user_id=ADMIN, private=False) == bot.handle_message(
+            "隨便打的字", user_id=ADMIN, private=False
+        )
 
 
 def test_service_not_configured(monkeypatch, service):

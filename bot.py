@@ -520,6 +520,26 @@ def fmt_status() -> str:
 
 
 def fmt_help(admin: bool = False) -> str:
+    """「說明」：管理員（1:1）看總覽；其他人直接看雞尾酒說明，連音樂的存在都不提。"""
+    if not admin:
+        return fmt_cocktail_help()
+    return "\n".join(
+        [
+            "🍹 Difford's Guide 助理指令總覽",
+            "",
+            "🍸 雞尾酒：輸入「雞尾酒說明」",
+            "🎧 音樂：輸入「音樂說明」(管理員專用)",
+            "",
+            "📊 【共用】",
+            "▪ 狀態",
+            "  檢查資料庫爬蟲的最新運作狀態",
+            "▪ 說明 / 指令 / Help",
+            "  顯示此總覽",
+        ]
+    )
+
+
+def fmt_cocktail_help() -> str:
     return "\n".join(
         [
             "🍹 Difford's Guide 雞尾酒助理指令",
@@ -564,24 +584,30 @@ def fmt_help(admin: bool = False) -> str:
             "▪ 雞尾酒爬蟲 <test|incremental|full>",
             "  啟動資料庫更新任務 (管理員專用)",
         ]
-        # 音樂功能只給管理員，對其他人連存在都不提
-        + (_MUSIC_HELP if admin else [])
     )
 
 
-_MUSIC_HELP = [
-    "",
-    "🎧 【音樂】(管理員專用)",
-    "▪ 音樂推薦 <指示> [N首]",
-    "  依指示挑歌並建立 Spotify 歌單",
-    "▪ 音樂預覽 <指示> [N首]",
-    "  只列出歌曲，不建立歌單",
-    "▪ 音樂口味更新",
-    "  重建口味檔",
-    "▪ 音樂狀態",
-    "  查看口味檔與樂評曲目狀態",
-    "  例：音樂預覽 下雨天的爵士 10首",
-]
+def fmt_music_help() -> str:
+    return "\n".join(
+        [
+            "🎧 音樂指令 (管理員專用)",
+            "",
+            "▪ 音樂推薦 <指示> [N首]",
+            f"  依指示挑歌並建立 Spotify 歌單（指示 1–{music_client.PROMPT_MAX} 字，最多 {music_client.N_MAX} 首）",
+            "  例：音樂推薦 下雨天的爵士 10首",
+            "▪ 音樂預覽 <指示> [N首]",
+            "  只列出歌曲，不建立歌單",
+            "  例：音樂預覽 適合深夜開車的電子樂",
+            "▪ 音樂口味更新",
+            "  重建口味檔",
+            "  例：音樂口味更新",
+            "▪ 音樂狀態",
+            "  查看口味檔與樂評曲目狀態",
+            "  例：音樂狀態",
+            "",
+            "⏳ 推薦約需 1 分鐘，超過時會先回覆再推播結果",
+        ]
+    )
 
 
 _LIMIT_RE = re.compile(r"\s+(\d+)\s*筆$")
@@ -706,6 +732,8 @@ def parse_command(text: str, *, admin: bool = False) -> tuple[str, list[Any]]:
     lower = text.lower()
     if lower in ("help", "說明", "指令"):
         return "help", []
+    if lower in ("雞尾酒說明", "cocktail help"):
+        return "cocktail_help", []
     if lower in ("status", "狀態"):
         return "status", []
     if lower in ("雞尾酒統計", "cocktail stats", "stats"):
@@ -746,6 +774,8 @@ def parse_command(text: str, *, admin: bool = False) -> tuple[str, list[Any]]:
         return "list", [args]
 
     if admin:
+        if lower in ("音樂說明", "music help"):
+            return "music_help", []
         music = _parse_music(text, limit)
         if music:
             return music
@@ -761,6 +791,10 @@ def handle_message(
     command, args = parse_command(text, admin=music)
     if command == "help":
         return fmt_help(music)
+    if command == "cocktail_help":
+        return fmt_cocktail_help()
+    if command == "music_help":
+        return fmt_music_help()
     if command == "status":
         return fmt_status()
     if command == "stats":

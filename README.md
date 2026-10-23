@@ -97,7 +97,8 @@ Supported message commands:
 | `雞尾酒統計` | Show database stats |
 | `雞尾酒爬蟲 <test\|incremental\|full>` | Trigger scraper |
 | `狀態` | Show scraper status |
-| `說明` | Show help |
+| `說明` / `help` | Show help (same as `雞尾酒說明`; the admin's 1:1 chat gets a short overview instead) |
+| `雞尾酒說明` / `cocktail help` | Full cocktail command help |
 
 Conditions stack freely, e.g. `雞尾酒列表 材料 gin 評分 4.2 排序 酒精濃度 降序 15筆`.
 
@@ -117,7 +118,8 @@ Any query accepts a trailing `N筆` to set the result count.
 **Music (admin only).** Music commands are forwarded to the separate
 `music-recommender` Cloud Run service. They only exist for the admin
 (`LINE_USER_ID`): for anyone else they behave exactly like an unrecognised
-message, and `說明` doesn't list them. Requires `MUSIC_SERVICE_URL`; without it
+message, and `說明` doesn't list them (in 1:1 chat the admin's `說明` is an
+overview pointing to `雞尾酒說明` / `音樂說明`). Requires `MUSIC_SERVICE_URL`; without it
 the admin gets "音樂功能未啟用".
 
 | Command | Description |
@@ -126,6 +128,7 @@ the admin gets "音樂功能未啟用".
 | `音樂預覽 <prompt> [N首]` | Same, list only — no playlist |
 | `音樂口味更新` | Rebuild the taste profile |
 | `音樂狀態` | Show taste profile / critics status |
+| `音樂說明` / `music help` | Music help with examples |
 
 A recommendation takes 20-60s. If it isn't done within 45s the bot replies
 "still picking" and pushes the result when ready.
@@ -214,7 +217,8 @@ uv run python query.py ask "雞尾酒列表 標籤 Classic/vintage 排序 卡路
 | `雞尾酒統計` | 顯示資料庫摘要 |
 | `雞尾酒爬蟲 <test\|incremental\|full>` | 啟動爬蟲 |
 | `狀態` | 查看爬蟲狀態 |
-| `說明` | 顯示指令 |
+| `說明` / `help` | 顯示指令（等同 `雞尾酒說明`；管理員 1:1 聊天改為簡短總覽）|
+| `雞尾酒說明` / `cocktail help` | 完整雞尾酒指令說明 |
 
 條件可自由疊加，例如 `雞尾酒列表 材料 gin 評分 4.2 排序 酒精濃度 降序 15筆`。
 
@@ -230,7 +234,7 @@ uv run python query.py ask "雞尾酒列表 標籤 Classic/vintage 排序 卡路
 
 **音樂（只限管理員）。** 音樂指令會轉給獨立的 `music-recommender` Cloud Run 服務。
 只有管理員（`LINE_USER_ID`）用得到：其他人送出時與任何不認得的訊息完全相同，
-「說明」裡也不會出現。需要 `MUSIC_SERVICE_URL`；未設定時管理員會收到「音樂功能未啟用」。
+「說明」裡也不會出現（管理員在 1:1 聊天的「說明」是指向「雞尾酒說明」／「音樂說明」的總覽）。需要 `MUSIC_SERVICE_URL`；未設定時管理員會收到「音樂功能未啟用」。
 
 | 指令 | 說明 |
 |---|---|
@@ -238,6 +242,7 @@ uv run python query.py ask "雞尾酒列表 標籤 Classic/vintage 排序 卡路
 | `音樂預覽 <指示> [N首]` | 只列出歌曲，不建立歌單 |
 | `音樂口味更新` | 重建口味檔 |
 | `音樂狀態` | 查看口味檔與樂評曲目狀態 |
+| `音樂說明` / `music help` | 音樂指令說明與範例 |
 
 推薦一次約 20-60 秒；45 秒內沒完成會先回「還在挑歌」，完成後再推播結果。
 

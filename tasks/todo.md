@@ -1,5 +1,11 @@
 # 待辦
 
+## 完成：說明拆成雞尾酒／音樂兩份（2026-10-23）
+
+- [x] `雞尾酒說明`／`cocktail help` 所有人可用；`音樂說明`／`music help` 只在 admin 1:1 解析，其他情況 = unknown
+- [x] `說明`：admin 1:1 顯示總覽；其他人與群組 = `雞尾酒說明`（原內容，不提音樂）
+- [x] README 中英指令表；pytest 139 passed
+
 ## 進行中：LINE bot 音樂指令轉送（2026-10-23）
 
 契約：`~/.hermes/cache/scratch/music_deploy_contract.md`。commit 後不 push，等 Hermes 驗證。
