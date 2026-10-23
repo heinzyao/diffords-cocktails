@@ -27,6 +27,7 @@ A Python data pipeline for collecting and querying cocktail recipes from [Diffor
 │   ├── selectors.py       # JSON-LD and HTML extraction
 │   ├── storage.py         # SQLite schema, writes, and queries
 │   ├── gcs_storage.py     # Cloud Run DB sync helpers
+│   ├── music_client.py    # Forwards music commands to music-recommender
 │   └── notify.py          # LINE push notifications for scraper runs
 ├── bot.py                 # LINE webhook service
 ├── query.py               # Local CLI query tool
@@ -112,6 +113,22 @@ than keywords, and can be combined with normal filters ("琴酒做的、苦苦�
 to gin first, then ranks by flavour). Requires a vector index built with
 `uv run python query.py index`; without it the bot falls back as above.
 Any query accepts a trailing `N筆` to set the result count.
+
+**Music (admin only).** Music commands are forwarded to the separate
+`music-recommender` Cloud Run service. They only exist for the admin
+(`LINE_USER_ID`): for anyone else they behave exactly like an unrecognised
+message, and `說明` doesn't list them. Requires `MUSIC_SERVICE_URL`; without it
+the admin gets "音樂功能未啟用".
+
+| Command | Description |
+|---|---|
+| `音樂推薦 <prompt> [N首]` | Pick tracks and create a Spotify playlist (prompt 1-300 chars, max 40 tracks) |
+| `音樂預覽 <prompt> [N首]` | Same, list only — no playlist |
+| `音樂口味更新` | Rebuild the taste profile |
+| `音樂狀態` | Show taste profile / critics status |
+
+A recommendation takes 20-60s. If it isn't done within 45s the bot replies
+"still picking" and pushes the result when ready.
 
 ### Data Model
 
@@ -210,6 +227,19 @@ uv run python query.py ask "雞尾酒列表 標籤 Classic/vintage 排序 卡路
 （「琴酒做的、苦苦的」會先篩出琴酒調酒，再依風味排序）。需要先用
 `uv run python query.py index` 建立向量索引；未建立時同樣退回上述行為。
 任一查詢皆可在句尾加「N筆」指定顯示筆數。
+
+**音樂（只限管理員）。** 音樂指令會轉給獨立的 `music-recommender` Cloud Run 服務。
+只有管理員（`LINE_USER_ID`）用得到：其他人送出時與任何不認得的訊息完全相同，
+「說明」裡也不會出現。需要 `MUSIC_SERVICE_URL`；未設定時管理員會收到「音樂功能未啟用」。
+
+| 指令 | 說明 |
+|---|---|
+| `音樂推薦 <指示> [N首]` | 挑歌並建立 Spotify 歌單（指示 1-300 字，最多 40 首）|
+| `音樂預覽 <指示> [N首]` | 只列出歌曲，不建立歌單 |
+| `音樂口味更新` | 重建口味檔 |
+| `音樂狀態` | 查看口味檔與樂評曲目狀態 |
+
+推薦一次約 20-60 秒；45 秒內沒完成會先回「還在挑歌」，完成後再推播結果。
 
 ### 已移除範圍
 

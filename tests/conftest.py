@@ -12,5 +12,5 @@ sys.path.insert(0, str(PROJECT_ROOT))
 #
 # 設成空字串而不是 pop：load_dotenv 預設不覆蓋已存在的鍵，pop 掉反而會讓
 # .env 的值補回來。需要金鑰的測試自己用 monkeypatch.setenv 覆蓋。
-for _leaky in ("GCS_BUCKET", "GEMINI_API_KEY"):
+for _leaky in ("GCS_BUCKET", "GEMINI_API_KEY", "MUSIC_SERVICE_URL"):
     os.environ[_leaky] = ""

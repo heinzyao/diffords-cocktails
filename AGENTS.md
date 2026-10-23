@@ -68,6 +68,29 @@ quota is scoped to the **GCP project, not the API key**, and this project's key 
 shared with cat-lendar — a second key would not isolate anything. Without the limit,
 whoever this bot is shared with can exhaust cat-lendar's quota too.
 
+### Music forwarding (bot only, admin only, always optional)
+
+`音樂推薦／音樂預覽／音樂口味更新／音樂狀態` are forwarded to the separate
+`music-recommender` Cloud Run service (`diffords_guide/music_client.py`); this repo
+holds no music logic. Contract: `~/.hermes/cache/scratch/music_deploy_contract.md`.
+
+- **Hidden from non-admins by construction**: `parse_command(text, admin=...)` only
+  recognises music commands when `admin=True`, so for anyone else they fall into the
+  `unknown` branch byte-for-byte (incl. NLP + rate limit). Validation errors are only
+  produced inside that admin branch — don't move them earlier, or they leak the feature.
+  `fmt_help(admin)` lists the 🎧 section for the admin only.
+- Auth: `fetch_id_token(Request(), MUSIC_SERVICE_URL)` with the bot's runtime SA
+  (granted `roles/run.invoker` on the service). `MUSIC_SERVICE_URL` unset → "音樂功能未啟用".
+  Every failure (503 Spotify rate limit, 240s timeout, connection/token error) becomes
+  one zh-TW line; nothing raises into the webhook.
+- Reply flow (`_handle_music_event`): loading animation → call service in a thread →
+  reply if done within `MUSIC_REPLY_WAIT` (45s), else reply "還在挑歌" and **push**
+  when done. The whole wait stays inside the webhook request on purpose: Cloud Run
+  throttles CPU after the response, so a post-200 background push may never run.
+  That's why the bot relies on the default 300s request timeout — don't lower it.
+  It holds one webhook-executor slot and one gunicorn thread for up to ~4 min;
+  no shared state, so `_scrape_lock` / `--workers 1` assumptions are untouched.
+
 ### Scrape flow (the core logic)
 1. `scraper.parse_sitemap()` reads `SITEMAP_URL` → list of URLs + `lastmod`.
 2. Incremental skip (`_should_skip`): compare sitemap `lastmod` against DB's per-URL `lastmod` map (`storage.get_url_lastmod_map()`). sitemap `lastmod` ≤ DB `lastmod` → skip; no `lastmod` in sitemap → skip conservatively. This is why incremental runs are cheap — don't break the `lastmod` round-trip.

@@ -1,6 +1,38 @@
 # 待辦
 
-目前無進行中的工作。
+## 進行中：LINE bot 音樂指令轉送（2026-10-23）
+
+契約：`~/.hermes/cache/scratch/music_deploy_contract.md`。commit 後不 push，等 Hermes 驗證。
+
+- [x] `parse_command(admin=)`：四個音樂指令、「N首」、指示 1–300 字
+- [x] 非 admin 與 unknown 完全相同；`fmt_help(admin)` 只對 admin 顯示 🎧
+- [x] `diffords_guide/music_client.py`：ID token、未設定／503／逾時／其他錯誤 → 一句繁中
+- [x] loading → 45 秒內 reply，否則先回再 push；文字截斷 ≤ 5000
+- [x] deploy.yml 帶 `MUSIC_SERVICE_URL`（secret 不存在 → 空字串 → 未啟用）；依賴加 `google-auth`
+- [x] 測試（全 mock）、ruff（新檔無新增類型問題）
+- [x] 本機簽章模擬 webhook：假音樂服務 + 攔截所有 LINE API
+- [x] README／AGENTS.md
+- [x] Opus 第二意見審查
+
+### Review
+
+驗證：pytest 136 passed；ruff 新增只有 FA102（repo 既有慣例）與刻意的 BLE001。
+本機 gunicorn + 簽章 webhook + 假音樂服務（所有 LINE API 攔截、ID token mock）：
+admin「音樂預覽 下雨天的爵士」→ loading + reply 歌單；非 admin 同訊息 → 與「隨便打的字」
+相同的 unknown 回覆、假服務未被呼叫；慢速（等待改 2 秒）→ reply「還在挑歌」+ push；
+錯誤簽章 → 400；說明只有 admin 有 🎧 區塊。
+
+Opus 第二意見：
+- 採納：admin 在群組時音樂與 🎧 說明會被群組成員看到 → 只在 `source.type == "user"` 開放。
+- 採納：`_handle_event` 裡的 parse 例外會變沉默 → `_is_music` 包例外、退回 `_safe_handle`。
+- 採納：loading 呼叫最多 10 秒吃掉 45 秒預算 → 先送出服務呼叫再開動畫。
+- 採納：secret 尾端換行 → client 端 `strip()`。
+- 駁回：gunicorn 30 秒砍 worker —— Dockerfile 是 `--threads 8`（gthread），不受影響。
+- 駁回：LINE 重送造成重複建歌單 —— webhook 已丟棄 `isRedelivery` 事件。
+- 駁回：`_is_admin(None)` 變管理員 —— 已有 `bool(admin) and` 擋住。
+- 駁回：push 失敗無聲 —— `_post_line` 已記 warning（含狀態碼）。
+- 記錄不改：音樂請求佔一條 gunicorn thread 最多約 4 分鐘，Cloud Run concurrency 80 > threads 8；
+  單一管理員使用量下可接受，見 AGENTS.md。
 
 ## 已歸檔的工作紀錄
 

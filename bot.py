@@ -12,6 +12,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -20,17 +21,21 @@ import requests
 from dotenv import load_dotenv
 from flask import Flask, abort, request
 
-from diffords_guide import nlp
+from diffords_guide import music_client, nlp
 from diffords_guide.config import DIFFORDS_DB_DEFAULT, GCS_DIFFORDS_DB_BLOB
 from diffords_guide.notify import fetch_access_token
 
 _ = load_dotenv()
 
 LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
+LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
+LINE_LOADING_URL = "https://api.line.me/v2/bot/chat/loading/start"
 MSG_LIMIT = 4900
 SEARCH_LIMIT_DEFAULT = 5
 LIST_LIMIT_DEFAULT = 10
 RESULT_LIMIT_MAX = 20
+# replyToken 約 1 分鐘過期；音樂推薦要 20-60 秒，超過這個秒數就先回一句、改用 push
+MUSIC_REPLY_WAIT = 45.0
 
 GCS_BUCKET = os.getenv("GCS_BUCKET", "")
 GCS_DB_BLOB = os.getenv("GCS_DB_BLOB", GCS_DIFFORDS_DB_BLOB)
@@ -114,9 +119,24 @@ def _nlp_rate_ok(user_id: str | None) -> bool:
 def _reply(reply_token: str, text: str, access_token: str) -> bool:
     chunks = [text[i : i + MSG_LIMIT] for i in range(0, len(text), MSG_LIMIT)][:5]
     payload = {"replyToken": reply_token, "messages": [{"type": "text", "text": c} for c in chunks]}
+    return _post_line(LINE_REPLY_URL, payload, access_token)
+
+
+def _push(user_id: str, text: str, access_token: str) -> bool:
+    """推播單則文字；LINE 單則上限 5000 字，超過截斷。"""
+    payload = {"to": user_id, "messages": [{"type": "text", "text": _truncate(text, MSG_LIMIT)}]}
+    return _post_line(LINE_PUSH_URL, payload, access_token)
+
+
+def _start_loading(user_id: str, access_token: str) -> None:
+    """顯示「輸入中」動畫。純裝飾，失敗不影響後續。"""
+    _post_line(LINE_LOADING_URL, {"chatId": user_id, "loadingSeconds": 60}, access_token)
+
+
+def _post_line(url: str, payload: dict[str, Any], access_token: str) -> bool:
     try:
         resp = requests.post(
-            LINE_REPLY_URL,
+            url,
             headers={
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
@@ -125,10 +145,10 @@ def _reply(reply_token: str, text: str, access_token: str) -> bool:
             timeout=10,
         )
     except requests.RequestException as exc:
-        logger.error("LINE reply failed: %s", exc)
+        logger.error("LINE API failed: %s %s", url, exc)
         return False
     if resp.status_code != 200:
-        logger.warning("LINE reply failed: %s %s", resp.status_code, resp.text[:200])
+        logger.warning("LINE API failed: %s %s %s", url, resp.status_code, resp.text[:200])
         return False
     return True
 
@@ -499,7 +519,7 @@ def fmt_status() -> str:
         return f"⚡ Difford's Guide 爬蟲任務：正在執行中...\n模式：{_scrape_state['mode']}\n已耗時：{elapsed} 秒"
 
 
-def fmt_help() -> str:
+def fmt_help(admin: bool = False) -> str:
     return "\n".join(
         [
             "🍹 Difford's Guide 雞尾酒助理指令",
@@ -544,10 +564,28 @@ def fmt_help() -> str:
             "▪ 雞尾酒爬蟲 <test|incremental|full>",
             "  啟動資料庫更新任務 (管理員專用)",
         ]
+        # 音樂功能只給管理員，對其他人連存在都不提
+        + (_MUSIC_HELP if admin else [])
     )
 
 
+_MUSIC_HELP = [
+    "",
+    "🎧 【音樂】(管理員專用)",
+    "▪ 音樂推薦 <指示> [N首]",
+    "  依指示挑歌並建立 Spotify 歌單",
+    "▪ 音樂預覽 <指示> [N首]",
+    "  只列出歌曲，不建立歌單",
+    "▪ 音樂口味更新",
+    "  重建口味檔",
+    "▪ 音樂狀態",
+    "  查看口味檔與樂評曲目狀態",
+    "  例：音樂預覽 下雨天的爵士 10首",
+]
+
+
 _LIMIT_RE = re.compile(r"\s+(\d+)\s*筆$")
+_MUSIC_LIMIT_RE = re.compile(r"\s+(\d+)\s*首$")
 
 # 中文關鍵詞對英文資料（酒名／食材／標籤皆為英文）天然不衝突，
 # 所以貪婪取值是安全的。
@@ -632,18 +670,38 @@ def _scan_conditions(tokens: list[str]) -> dict[str, Any]:
     return out
 
 
-def _split_limit(text: str) -> tuple[str, int | None]:
-    """切出指令尾端的「N筆」；未指定回傳 None。
+def _split_limit(text: str, pattern: re.Pattern[str] = _LIMIT_RE) -> tuple[str, int | None]:
+    """切出指令尾端的「N筆」（音樂指令傳 _MUSIC_LIMIT_RE 改切「N首」）；未指定回傳 None。
 
     用「筆」當單位而非裸數字，是因為 158 款酒名本身以數字結尾（No. 2、Apollo 8）。
     """
-    match = _LIMIT_RE.search(text)
+    match = pattern.search(text)
     if not match:
         return text, None
     return text[: match.start()].strip(), int(match.group(1))
 
 
-def parse_command(text: str) -> tuple[str, list[Any]]:
+def _parse_music(text: str, limit: int | None) -> tuple[str, list[Any]] | None:
+    """音樂指令；不是音樂指令回 None。只在管理員身分下被呼叫。"""
+    if text == "音樂口味更新":
+        return "music", ["refresh"]
+    if text == "音樂狀態":
+        return "music", ["status"]
+    match = re.match(r"^音樂(推薦|預覽)(?:\s+(.*))?$", text, re.DOTALL)
+    if not match:
+        return None
+    prompt, n = _split_limit((match.group(2) or "").strip(), _MUSIC_LIMIT_RE)
+    if not 1 <= len(prompt) <= music_client.PROMPT_MAX:
+        return "error", [(
+            f"🎧 「音樂{match.group(1)}」後面需要 1–{music_client.PROMPT_MAX} 字的指示，"
+            f"例如「音樂{match.group(1)} 下雨天的爵士」。"
+        )]
+    return "music", ["recommend", prompt, n or limit, match.group(1) == "推薦"]
+
+
+def parse_command(text: str, *, admin: bool = False) -> tuple[str, list[Any]]:
+    """admin=False 時音樂指令根本不會被解析，直接落到 unknown —— 對非管理員
+    的行為與任何不認得的輸入逐字相同，不透露功能存在。"""
     text, limit = _split_limit(text.strip())
     lower = text.lower()
     if lower in ("help", "說明", "指令"):
@@ -687,15 +745,22 @@ def parse_command(text: str) -> tuple[str, list[Any]]:
             args["limit"] = limit
         return "list", [args]
 
+    if admin:
+        music = _parse_music(text, limit)
+        if music:
+            return music
+
     return "unknown", [text]
 
 
 def handle_message(
-    text: str, db_path: str = DB_DEFAULT, *, user_id: str | None = None
+    text: str, db_path: str = DB_DEFAULT, *, user_id: str | None = None, private: bool = True
 ) -> str:
-    command, args = parse_command(text)
+    # 音樂只在管理員的 1:1 聊天開放：群組裡回覆（含「說明」）其他成員都看得到
+    music = private and _is_admin(user_id)
+    command, args = parse_command(text, admin=music)
     if command == "help":
-        return fmt_help()
+        return fmt_help(music)
     if command == "status":
         return fmt_status()
     if command == "stats":
@@ -724,6 +789,8 @@ def handle_message(
             logger.exception("Failed to start scraper")
             return f"❌ Difford's Guide 爬蟲任務啟動失敗：{exc}"
         return f"🚀 Difford's Guide 爬蟲任務已成功啟動（模式：{mode}）！"
+    if command == "music" and music:
+        return _truncate(music_client.run(*args), MSG_LIMIT)
     # 舊指令都沒命中 —— 交給 Gemini 試著解析成查詢條件。
     # 這是純加分路徑：解析不出來（或沒設 GEMINI_API_KEY）就照舊回提示。
     if command == "unknown":
@@ -756,6 +823,43 @@ def health():
     return {"status": "ok", "service": "diffords-cocktails"}, 200
 
 
+def _safe_handle(text: str, user_id: str | None, private: bool = True) -> str:
+    try:
+        return handle_message(text, user_id=user_id, private=private)
+    except Exception:
+        logger.exception("handle_message 失敗：%r", text)
+        return "⚠️ 處理指令時發生未預期的錯誤，請稍後再試或輸入「說明」查看可用指令。"
+
+
+def _handle_music_event(text: str, user_id: str, reply_token: str, access_token: str) -> None:
+    """音樂指令：45 秒內完成用 reply，否則先回一句、做完再 push。
+
+    整段等待都留在 webhook 請求裡（webhook 會等 executor 收完才回 200），
+    因為 Cloud Run 預設在回應後節流 CPU，回完 200 才在背景跑的話 push 可能永遠送不出去。
+    服務端 timeout 240 秒，加上前後不到 300 秒的 Cloud Run 請求上限。
+    ponytail: 期間佔住 webhook executor 一格（共 4 格）與 gunicorn 一條 thread；
+    同一批訊息超過 4 則且含多個音樂指令才會排隊。要徹底解耦得改 Cloud Tasks。
+    """
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(_safe_handle, text, user_id)
+        # 先送出服務呼叫再開動畫：動畫的 LINE API 呼叫不該吃掉 45 秒的預算
+        _start_loading(user_id, access_token)
+        try:
+            _reply(reply_token, future.result(timeout=MUSIC_REPLY_WAIT), access_token)
+            return
+        except FutureTimeout:
+            _reply(reply_token, "🎧 還在挑歌，完成後推播給你", access_token)
+        _push(user_id, future.result(), access_token)
+
+
+def _is_music(text: str, user_id: str) -> bool:
+    """管理員的音樂指令？解析例外當作不是，交給 _safe_handle 照常回錯誤訊息。"""
+    try:
+        return _is_admin(user_id) and parse_command(text, admin=True)[0] == "music"
+    except Exception:
+        return False
+
+
 def _handle_event(event: dict[str, Any], access_token: str) -> None:
     """處理單一 message event 並回覆。
 
@@ -771,15 +875,16 @@ def _handle_event(event: dict[str, Any], access_token: str) -> None:
     if not reply_token:
         return
     text = message.get("text") or ""
-    # 指令文法是自由輸入，解析路徑比舊的固定 regex 寬得多。少了這層保險，
-    # 任何未預期的例外都會讓使用者只收到沉默。
+    source = event.get("source") or {}
+    user_id = source.get("userId")
+    private = source.get("type", "user") == "user"
     try:
-        reply = handle_message(text, user_id=(event.get("source") or {}).get("userId"))
-    except Exception:
-        logger.exception("handle_message 失敗：%r", text)
-        reply = "⚠️ 處理指令時發生未預期的錯誤，請稍後再試或輸入「說明」查看可用指令。"
-    try:
-        _reply(reply_token, reply, access_token)
+        if user_id and private and _is_music(text, user_id):
+            _handle_music_event(text, user_id, reply_token, access_token)
+            return
+        # 指令文法是自由輸入，解析路徑比舊的固定 regex 寬得多。少了 _safe_handle
+        # 這層保險，任何未預期的例外都會讓使用者只收到沉默。
+        _reply(reply_token, _safe_handle(text, user_id, private), access_token)
     except Exception:
         logger.exception("回覆失敗：%r", text)
 
